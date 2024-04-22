@@ -24,36 +24,32 @@ pub fn search_for_patterns(function_body: &str) -> Option<String> {
     match load_patterns_hash_map() {
         Ok(pattern_config) => {
             for pattern in pattern_config.patterns {
-                if function_body.len() > 100 {
-                    match get_lcs_pattern(&replaced_body, &pattern.pattern) {
-                        Ok(f_body_lcs) => {
-                            if f_body_lcs.len() > 50 {
-                                match get_sequence_tlsh(&f_body_lcs) {
-                                    Ok(lcs_tlsh) => {
-                                        match get_sequence_tlsh(&pattern.pattern) {
-                                            Ok(pattern_tlsh) => {
-                                                let diff = pattern_tlsh.diff(&lcs_tlsh, false);
-                                                if diff < 200 {
-                                                   replaced_body = replace_sequence(
-                                                        &replaced_body,
-                                                        &pattern.pattern,
-                                                        &pattern.body).unwrap_or(replaced_body);
-                                                }
-                                            }
-                                            Err(err) => {
-                                                println!("Error getting TLSH for pattern: {}", err);
-                                            }
+                match get_lcs_pattern(&replaced_body, &pattern.pattern) {
+                    Ok(common_sequence) => {
+                        match get_sequence_tlsh(&common_sequence) {
+                            Ok(lcs_tlsh) => {
+                                match get_sequence_tlsh(&pattern.pattern) {
+                                    Ok(pattern_tlsh) => {
+                                        let diff = pattern_tlsh.diff(&lcs_tlsh, false);
+                                        if diff < 200 {
+                                           replaced_body = replace_sequence(
+                                                &replaced_body,
+                                                &pattern.pattern,
+                                                &pattern.body).unwrap_or(replaced_body);
                                         }
                                     }
                                     Err(err) => {
-                                        println!("Error getting TLSH for function body: {}", err);
+                                        println!("Error 1 loading patterns: {}", err);
                                     }
                                 }
                             }
+                            Err(err) => {
+                                println!("Error 2 loading patterns: {}", err);
+                            }
                         }
-                        Err(err) => {
-                            println!("Error checking LCS patterns: {}", err);
-                        }
+                    }
+                    Err(err) => {
+                        println!("Error 3 loading patterns: {}", err);
                     }
                 }
             }

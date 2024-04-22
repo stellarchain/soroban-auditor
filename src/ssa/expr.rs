@@ -1,3 +1,4 @@
+use crate::ssa::Stmt;
 use regex::Regex;
 use crate::soroban::FunctionInfo;
 use std::collections::HashMap;
@@ -652,17 +653,22 @@ fn write_binop_func(f: &mut fmt::CodeWriter, name: &'static str, a: &Expr, b: &E
     f.write(")");
 }
 
-pub fn write_call(f: &mut fmt::CodeWriter, index: u32, args: &[Expr]) {
-    let func_name = f.module().func(index).name().to_string();
-    write!(f, "{}(", func_name);
-    if !args.is_empty() {
-        f.write(&args[0]);
-        for arg in &args[1..] {
-            f.write(", ");
-            f.write(arg);
+pub fn write_call(f: &mut fmt::CodeWriter, index: u32, args: &[Expr]) -> Option<Vec<Stmt>> {
+    let func = f.module().func(index);
+    if func.is_imported() {
+        write!(f, "{}(", func.name().to_string());
+        if !args.is_empty() {
+            f.write(&args[0]);
+            for arg in &args[1..] {
+                f.write(", ");
+                f.write(arg);
+            }
         }
+        f.write(")");
+        None
+    } else {
+        f.decompile_func(index, true, args).ok()
     }
-    f.write(")");
 }
 
 impl fmt::CodeDisplay for Expr {
@@ -676,7 +682,11 @@ impl fmt::CodeDisplay for Expr {
                 f.write(" : ");
                 write_paren(f, self, b);
             }
-            Expr::Call(index, args) => write_call(f, *index, args),
+            Expr::Call(index, args) => {
+                if let Some(code) = write_call(f, *index, args) {
+                    f.write_body(&code);
+                }
+            }
             Expr::CallIndirect(index, args, sig) => {
                 let mut targets = HashMap::new();
                 let wasm = f.wasm();

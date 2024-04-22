@@ -1,10 +1,11 @@
-use std::rc::Rc;
+use crate::ssa::Expr;
 use crate::analysis;
 use crate::cfg::{Cfg, CfgBuildError};
 use crate::soroban::sdk_linker::search_for_patterns;
 use crate::soroban::FunctionInfo;
 use crate::ssa;
 use crate::structuring;
+use std::rc::Rc;
 
 use crate::ssa::Stmt;
 use crate::wasm_wrapper::wasm;
@@ -125,14 +126,14 @@ impl CodeWriter {
     }
 
     pub fn string_func(&mut self, fmt: impl CodeDisplay) -> String {
-        fmt.create_str(self.wasm.clone(), 1)
+        fmt.create_str(self.wasm.clone(), self.func_index)
     }
 
     pub fn write_fmt(&mut self, args: std::fmt::Arguments) {
         self.output.write_fmt(args);
     }
 
-    pub fn decompile_func(&mut self, func_index: u32, is_call: bool) -> Result<(), CfgBuildError> {
+    pub fn decompile_func(&mut self, func_index: u32, is_call: bool, args: &[Expr]) -> Result<Vec<Stmt>, CfgBuildError> {
         let mut cfg = Cfg::build(self.wasm.clone(), func_index)?;
         let mut def_use_map = ssa::transform_to_ssa(&mut cfg);
         analysis::propagate_expressions(&mut cfg, &mut def_use_map);
@@ -140,51 +141,74 @@ impl CodeWriter {
         ssa::transform_out_of_ssa(&mut cfg);
 
         let (_decls, code) = structuring::structure(cfg);
-        CodeWriter::printer(self.wasm.clone(), func_index).write_func(&code, is_call);
-        Ok(())
+        Ok(code)
     }
 
-    pub fn write_func(&mut self, code: &[Stmt], is_call:bool) {
+    pub fn write_func(&mut self, code: &[Stmt], is_call: bool) {
         let func = self.func();
         let ret_type = match func.return_type() {
-            Some(type_ret) => {
-                let type_str = type_ret.to_string();
-                type_str
-            }
+            Some(type_ret) => type_ret.to_string(),
             None => "".to_string(),
         };
 
         let env_arg = "env";
-        let (params, return_type) = match func.spec_fn() {
-            Some(spec) if spec != &FunctionInfo::default() => {
-                let mut params_vec = vec![format!("{}: {}", env_arg, "Env")];
-                params_vec.extend(spec.inputs().iter().enumerate().map(|(_i, param)| {
-                    format!("{}: {}", param.name(), param.type_ident().type_str())
-                }));
-                let params = params_vec.join(", ");
-                let output = spec.output();
-                let return_type = output.map_or(ret_type, |o| o.type_ident().type_str().to_string());
-                (params, return_type)
+        if let Some(spec) = func.spec_fn() {
+            if spec == &FunctionInfo::default() && is_call == false {
+                return; // Exit early
             }
-            _ => {
-                let mut params_vec = vec![format!("{}: {}", env_arg, "Env")];
-                params_vec.extend(func.params().iter().enumerate().map(|(i, t)| {
-                    format!("arg_{}: {} ", (i as u8 + b'a') as char, t)
-                }));
-                let params = params_vec.join(", ");
-                (params, ret_type)
+
+            let mut params_vec = vec![format!("{}: {}", env_arg, "Env")];
+            params_vec.extend(
+                spec.inputs()
+                    .iter()
+                    .enumerate()
+                    .map(|(_i, param)| format!("{}: {}", param.name(), param.type_ident().type_str())),
+            );
+            let params = params_vec.join(", ");
+            let output = spec.output();
+            let return_type = output.map_or(ret_type, |o| o.type_ident().type_str().to_string());
+
+            let func_header = if return_type.len() > 0 {
+                format!("pub fn {}({}) -> {} {{", func.name(), params, return_type)
+            } else {
+                format!("pub fn {}({}) {{", func.name(), params)
+            };
+
+            self.indent();
+            if !is_call {
+                self.write(func_header.as_str());
             }
-        };
-        let func_header = if return_type.len() > 0 {
-            format!("pub fn {}({}) -> {} {{", func.name(), params, return_type)
-        } else {
+
+            let code_str = self.string_func(&code[..]);
+            self.write(code_str.as_str());
+
+            self.dedent();
+            if !is_call {
+                self.newline();
+                self.write("}");
+            }
+            return; // Exit early
+        }
+
+        // If no spec, continue with default behavior
+        let mut params_vec = vec![format!("{}: {}", env_arg, "Env")];
+        params_vec.extend(
+            func.params()
+                .iter()
+                .enumerate()
+                .map(|(i, t)| format!("arg_{}: {} ", (i as u8 + b'a') as char, t)),
+        );
+        let params = params_vec.join(", ");
+
+        let func_header = if ret_type.is_empty() {
             format!("pub fn {}({}) {{", func.name(), params)
+        } else {
+            format!("pub fn {}({}) -> {} {{", func.name(), params, ret_type)
         };
 
         self.write(func_header.as_str());
         self.indent();
-        self.newline();
-        self.write_body(&code[..]);
+        self.write(&code[..]);
         self.dedent();
         self.write("}");
         self.newline();
@@ -210,12 +234,6 @@ impl CodeWriter {
     }
 
     pub fn write_body(&mut self, code: &[Stmt]) {
-        let code_str = self.string_func(&code[..]);
-        let replaced_body = search_for_patterns(&code_str);
-        if let Some(replaced_body_value) = replaced_body {
-            println!("{}", replaced_body_value);
-        } else {
-            self.write(&code[..]);
-        }
+        self.write(&code[..]);
     }
 }

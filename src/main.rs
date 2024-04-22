@@ -36,8 +36,6 @@ fn main() {
     } else {
         for (i, func) in wasm.module().functions().iter().enumerate() {
             if !func.is_imported() {
-                let name = func.name();
-                eprintln!("//Decompiling {}({})", name, i);
                 match wasm.decompile_function(i as u32) {
                     Ok(()) => (),
                     Err(CfgBuildError::NoSuchFunc) => eprintln!("No function with index {}", i),
@@ -45,7 +43,6 @@ fn main() {
                         eprintln!("Function {} is imported and can not be decompiled", i)
                     }
                 }
-                println!();
             }
         }
     }

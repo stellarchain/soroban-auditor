@@ -1,8 +1,9 @@
+use crate::ssa::Expr;
+use super::wasm_adapter::{InitExpr, LoadError, Module};
 use crate::cfg::CfgBuildError;
-use std::rc::Rc;
 use crate::fmt::CodeWriter;
 use crate::soroban::FunctionInfo;
-use super::wasm_adapter::{InitExpr, LoadError, Module};
+use std::rc::Rc;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum TableElement {
@@ -31,7 +32,7 @@ impl Instance {
     }
 
     pub fn load_file<P: AsRef<::std::path::Path>>(path: P) -> Rc<Self> {
-         match self::Instance::from_file(path) {
+        match self::Instance::from_file(path) {
             Ok(instance) => Rc::new(instance),
             Err(error) => {
                 panic!("Wasm not loaded.");
@@ -49,9 +50,11 @@ impl Instance {
         &self.module().spec_fns()
     }
 
-    pub fn decompile_function(&self, func_index: u32) -> Result<(), CfgBuildError>{
+    pub fn decompile_function(&self, func_index: u32) -> Result<(), CfgBuildError> {
         let mut printer = CodeWriter::printer(Rc::new(self.clone()), func_index);
-        printer.decompile_func(func_index as u32, false).unwrap();
+        let empty_args: &[Expr] = &[];
+        let code = printer.decompile_func(func_index as u32, false, empty_args).unwrap();
+        printer.write_func(&code, false);
         Ok(())
     }
 }
