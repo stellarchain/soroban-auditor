@@ -207,7 +207,13 @@ impl CodeWriter {
                 code_to_write.push_str("\n}");
             }
 
-            let formatted = CodeWriter::prettify(&&code_to_write.as_str()).unwrap();
+            let formatted = match CodeWriter::prettify(&code_to_write) {
+                Ok(formatted) => formatted,
+                Err(_) => {
+                    code_to_write
+                }
+            };
+
             self.write(formatted.as_str());
             return; // Exit early
         }

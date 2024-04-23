@@ -5,10 +5,12 @@ pattern = """
     var_a = global_a - 32;
     var_b = global_a - 32;
     var_c = 
-    var_c = ledger.has_contract_data(var_a, var_b);
-    var_c == True;
+    var_a = ledger.has_contract_data(METADATA, Void);
+    var_a == True;
     if var_c {
-        var_d = ledger.get_contract_data(METADATA, Void);
+        var_d = 
+        var_a = ledger.get_contract_data(METADATA, Void);
+        var_a;
         var_c = 0;
         var_d = global_a - 32;
         var_e = global_a - 32;
@@ -16,11 +18,7 @@ pattern = """
             store_i64(var_d + 8 + var_c, Void);
         }
         if (var_b & 255) == Map(obj#0) {
-            if var_c != var_e {
-                panic!("stop");
-            }
-            map.map_unpack_to_linear_memory(var_a, extend_u_i64(var_b) << 
-32 | 0, extend_u_i64(var_d) << 32 | 0, extend_u_i64(var_c) << 32 | 0)
+            map.map_unpack_to_linear_memory(var_b, 1048596, extend_u_i64(var_d + 8) << 32 | 0, 3)
             var_f = load_i64(var_d + 8);
             if (var_f & 255) != 0 {
                 store_i64(var_a, True);
@@ -43,6 +41,7 @@ pattern = """
         } else {
             store_i64(var_a, True);
         }
+
 """
 body = "let util = TokenUtils::new(&env);\nutil.metadata().get_metadata()\n"
 
@@ -76,6 +75,19 @@ pattern = """
 """
 body = ".symbol"
 
+[[patterns]]
+name="decimal position"
+hash=""
+pattern = """
+    var_e = load_i64(var_a);
+        if var_e == 0 {
+            var_f = load_32u_i64(var_a + 24);
+            var_f << 32 | 0
+        }
+    }
+    panic!("stop");
+"""
+body = ".decimals"
 
 [[patterns]]
 name="auth"
