@@ -113,7 +113,7 @@ pattern = """
             store_i64(spender + 16, var_g);
             store_i64(spender + 8, var_h);
         }
-        if !var_d || var_d && var_e {
+        if var_e || !var_d {
             var_f = False;
         }
         store_i64(spender, var_f);
@@ -123,5 +123,6 @@ pattern = """
             Void
         }
     }
+    panic!("stop");
 """
 body = "spender.require_auth();"

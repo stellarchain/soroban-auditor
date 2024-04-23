@@ -204,7 +204,7 @@ impl CodeWriter {
 
             self.dedent();
             if !is_call {
-                code_to_write.push_str("\n}");
+                code_to_write.push_str("\n}\n\n");
             }
 
             let formatted = match CodeWriter::prettify(&code_to_write) {
