@@ -1,42 +1,115 @@
 [[patterns]]
-hash = "T1AAB09BC05C78D9555B944298FD0965841ABD0C032CAC5C4CD56CF8D53799AC6C54935"
+name = "get_metadata"
+hash = ""
 pattern = """
-var_d = buf.string_new_from_linear_memory(1048576, 5);
-store_i64(arg_b + 8, var_d);
-var_e = extend_u_i64(arg_b + 8);
-vec.vec_new_from_linear_memory(var_e << 32 | 0, 1)
+    var_a = global_a - 32;
+    var_b = global_a - 32;
+    var_c = 
+    var_c = ledger.has_contract_data(var_a, var_b);
+    var_c == True;
+    if var_c {
+        var_d = ledger.get_contract_data(METADATA, Void);
+        var_c = 0;
+        var_d = global_a - 32;
+        var_e = global_a - 32;
+        for ; var_c == 24; var_d = var_c + 8 {
+            store_i64(var_d + 8 + var_c, Void);
+        }
+        if (var_b & 255) == Map(obj#0) {
+            if var_c != var_e {
+                panic!("stop");
+            }
+            map.map_unpack_to_linear_memory(var_a, extend_u_i64(var_b) << 
+32 | 0, extend_u_i64(var_d) << 32 | 0, extend_u_i64(var_c) << 32 | 0)
+            var_f = load_i64(var_d + 8);
+            if (var_f & 255) != 0 {
+                store_i64(var_a, True);
+            } else {
+                var_g = load_i64(var_d + 16);
+                if (var_g & 255) != String(obj#0) {
+                    store_i64(var_a, True);
+                } else {
+                    var_h = load_i64(var_d + 24);
+                    if (var_h & 255) == String(obj#0) {
+                        store_i64(var_a + 8, var_g);
+                        store_i64(var_a, False);
+                        store32_i32(var_a + 24, var_f >>u 32);
+                        store_i64(var_a + 16, var_h);
+                    } else {
+                        store_i64(var_a, True);
+                    }
+                }
+            }
+        } else {
+            store_i64(var_a, True);
+        }
 """
-body = "vec![&env]\n"
+body = "let util = TokenUtils::new(&env);\nutil.metadata().get_metadata()\n"
 
 
 [[patterns]]
-hash = "T1AAB09BC05C78D9555B944298FD0965841ABD0C032CAC5C4CD56CF8D53799AC6C54935"
+name="name position"
+hash=""
 pattern = """
-var_d = ledger.has_contract_data(METADATA, Void);
-if var_d == True {
-    var_e = ledger.get_contract_data(METADATA, Void);
-    for ; arg_a == 24; arg_b = arg_a + 8 {
-        store_i64(arg_b + 8 + arg_a, Void);
-    }
-    if (var_e & 255) == Map(obj#0) {
-        var_f = extend_u_i64(arg_b + 8);
-        map.map_unpack_to_linear_memory(var_e, 1048596, var_f << 32 | 0, 3);
-        var_g = load_i64(arg_b + 8);
-        if (var_g & 255) == 0 {
-            var_h = load_i64(arg_b + 16);
-            if (var_h & 255) == String(obj#0) {
-                var_i = load_i64(arg_b + 24);
-                if (var_i & 255) == String(obj#0) {
-                    store_i64(arg_b + 24, var_i);
-                    store_i64(arg_b + 16, var_h);
-                    store_i64(arg_b + 8, var_g & -4294967296 | 0);
-                    var_j = map.map_new_from_linear_memory(1048596, var_f << 32 | 0, 3);
-                    var_j
-                }
-            }
+   var_e = load_i64(var_a);
+        if var_e == 0 {
+            var_f = load_i64(var_a + 8);
+            var_f
         }
     }
-}
+    panic!("stop");
 """
-body = "let util = TokenUtils::new(&env)\nutil.metadata().get_metadata()"
+body = ".name"
 
+
+[[patterns]]
+name="symbol position"
+hash=""
+pattern = """
+   var_e = load_i64(var_a);
+        if var_e == 0 {
+            var_f = load_i64(var_a + 16);
+            var_f
+        }
+    }
+    panic!("stop");
+"""
+body = ".symbol"
+
+
+[[patterns]]
+name="auth"
+hash=""
+pattern = """
+    var_d = global_a - 32;
+    var_e = global_a - 32;
+    if !((spender & 255) != Address(obj#0)) | ((from & 255) != Address(obj#0)) {
+        amount;
+        var_d = amount != 69;
+        if var_d {
+            var_e = amount == 11;
+            if var_e {
+                store_i64(spender + 16, from >>s 63);
+                store_i64(spender + 8, from >>s 0);
+            } else {
+                store_i64(spender + 8, Error(Value, UnexpectedType));
+                var_f = True;
+            }
+        } else {
+            var_g = int.obj_to_i128_hi64(from);
+            var_h = int.obj_to_i128_lo64(from);
+            store_i64(spender + 16, var_g);
+            store_i64(spender + 8, var_h);
+        }
+        if !var_d || var_d && var_e {
+            var_f = False;
+        }
+        store_i64(spender, var_f);
+        var_f = load_i64(var_d + 8);
+        if var_f == 0 != 0 {
+            address.require_auth(spender)
+            Void
+        }
+    }
+"""
+body = "spender.require_auth();"

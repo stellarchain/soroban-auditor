@@ -1,11 +1,12 @@
-use crate::ssa::Expr;
 use crate::analysis;
 use crate::cfg::{Cfg, CfgBuildError};
 use crate::soroban::sdk_linker::search_for_patterns;
 use crate::soroban::FunctionInfo;
 use crate::ssa;
+use crate::ssa::Expr;
 use crate::structuring;
 use std::rc::Rc;
+use syn::Error;
 
 use crate::ssa::Stmt;
 use crate::wasm_wrapper::wasm;
@@ -133,7 +134,12 @@ impl CodeWriter {
         self.output.write_fmt(args);
     }
 
-    pub fn decompile_func(&mut self, func_index: u32, is_call: bool, args: &[Expr]) -> Result<Vec<Stmt>, CfgBuildError> {
+    pub fn decompile_func(
+        &mut self,
+        func_index: u32,
+        is_call: bool,
+        args: &[Expr],
+    ) -> Result<Vec<Stmt>, CfgBuildError> {
         let mut cfg = Cfg::build(self.wasm.clone(), func_index)?;
         let mut def_use_map = ssa::transform_to_ssa(&mut cfg);
         analysis::propagate_expressions(&mut cfg, &mut def_use_map);
@@ -153,7 +159,7 @@ impl CodeWriter {
 
         let env_arg = "env";
         if let Some(spec) = func.spec_fn() {
-            if spec == &FunctionInfo::default() && is_call == false {
+            if spec == &FunctionInfo::default() && !is_call {
                 return; // Exit early
             }
 
@@ -168,25 +174,41 @@ impl CodeWriter {
             let output = spec.output();
             let return_type = output.map_or(ret_type, |o| o.type_ident().type_str().to_string());
 
-            let func_header = if return_type.len() > 0 {
-                format!("pub fn {}({}) -> {} {{", func.name(), params, return_type)
+            let func_header = if return_type.is_empty() {
+                format!("pub fn {}({}) {{\n", func.name(), params)
             } else {
-                format!("pub fn {}({}) {{", func.name(), params)
+                format!("pub fn {}({}) -> {} {{\n", func.name(), params, return_type)
             };
 
             self.indent();
+            let mut code_to_write = String::new();
+
             if !is_call {
-                self.write(func_header.as_str());
+                code_to_write.push_str(func_header.as_str());
             }
 
-            let code_str = self.string_func(&code[..]);
-            self.write(code_str.as_str());
+            let code_string = &self.string_func(&code[..]);
+            let code_clean = self.clean_lines(code_string);
+
+            let enable_lsh = true;
+            if enable_lsh {
+                let replaced_body = search_for_patterns(&code_clean);
+                if let Some(replaced_body_value) = replaced_body {
+                    code_to_write.push_str(&replaced_body_value.as_str());
+                } else {
+                    code_to_write.push_str(&code_clean[..]);
+                }
+            } else {
+                code_to_write.push_str(&code_clean[..]);
+            }
 
             self.dedent();
             if !is_call {
-                self.newline();
-                self.write("}");
+                code_to_write.push_str("\n}");
             }
+
+            let formatted = CodeWriter::prettify(&&code_to_write.as_str()).unwrap();
+            self.write(formatted.as_str());
             return; // Exit early
         }
 
@@ -226,6 +248,24 @@ impl CodeWriter {
         }
     }
 
+    pub fn clean_lines(&mut self, text: &str) -> String {
+        let mut result = String::new();
+
+        for (i, line) in text.lines().enumerate() {
+            let trimmed_line = line.trim();
+            if trimmed_line.is_empty() {
+                continue;
+            }
+            result.push_str("    ");
+            result.push_str(line);
+            if i != text.lines().count() - 1 {
+                result.push('\n');
+            }
+        }
+
+        result
+    }
+
     pub fn get_output(self) -> String {
         match self.output {
             Output::Str(s) => s,
@@ -235,5 +275,11 @@ impl CodeWriter {
 
     pub fn write_body(&mut self, code: &[Stmt]) {
         self.write(&code[..]);
+    }
+
+    pub fn prettify(code: &str) -> Result<String, Error> {
+        let syntax_tree = syn::parse_str(&code)?;
+        let formatted = prettyplease::unparse(&syntax_tree);
+        Ok(formatted)
     }
 }

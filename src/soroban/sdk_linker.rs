@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 struct Pattern {
+    name: String,
     hash: String,
     pattern: String,
     body: String,
@@ -31,7 +32,7 @@ pub fn search_for_patterns(function_body: &str) -> Option<String> {
                                 match get_sequence_tlsh(&pattern.pattern) {
                                     Ok(pattern_tlsh) => {
                                         let diff = pattern_tlsh.diff(&lcs_tlsh, false);
-                                        if diff < 200 {
+                                        if diff < 10 {
                                            replaced_body = replace_sequence(
                                                 &replaced_body,
                                                 &pattern.pattern,
@@ -39,17 +40,17 @@ pub fn search_for_patterns(function_body: &str) -> Option<String> {
                                         }
                                     }
                                     Err(err) => {
-                                        println!("Error 1 loading patterns: {}", err);
+                                        //println!("Error 1 loading patterns: {}", err);
                                     }
                                 }
                             }
                             Err(err) => {
-                                println!("Error 2 loading patterns: {}", err);
+                                //println!("Error 2 loading patterns: {}", err);
                             }
                         }
                     }
                     Err(err) => {
-                        println!("Error 3 loading patterns: {}", err);
+                        //println!("Error 3 loading patterns: {}", err);
                     }
                 }
             }
@@ -103,7 +104,7 @@ fn replace_sequence(body: &str, sequence_to_replace: &str, replacement_sequence:
         body_index += 1;
     }
 
-    if min_distance < 3 {
+    if min_distance < 10 {
         result.push_str(&body[..found_index]);
         result.push_str(replacement_sequence);
         result.push_str(&body[found_index + sequence_length..]);

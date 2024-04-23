@@ -1,6 +1,6 @@
-use clap::{App, Arg};
 use auditor::cfg::CfgBuildError;
 use auditor::wasm_wrapper::wasm;
+use clap::{App, Arg};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -24,13 +24,17 @@ fn main() {
     let wasm = wasm::Instance::load_file(file_path);
     let _show_graph = args.is_present("show-graph");
 
-    if let Some(func_index) = args.value_of("function_name") {
-        let func_index = func_index.parse().unwrap();
-        match wasm.decompile_function(func_index) {
-            Ok(()) => (),
-            Err(CfgBuildError::NoSuchFunc) => eprintln!("No function with index {}", func_index),
-            Err(CfgBuildError::FuncIsImported) => {
-                eprintln!("Function {} is imported and can not be decompiled", func_index)
+    if let Some(func_name) = args.value_of("function_name") {
+        for (i, func) in wasm.module().functions().iter().enumerate() {
+            if func.name() == func_name {
+                let func_index = i as u32;
+                match wasm.decompile_function(func_index) {
+                    Ok(()) => (),
+                    Err(CfgBuildError::NoSuchFunc) => eprintln!("No function with index {}", func_index),
+                    Err(CfgBuildError::FuncIsImported) => {
+                        eprintln!("Function {} is imported and can not be decompiled", func_index)
+                    }
+                }
             }
         }
     } else {
@@ -47,4 +51,3 @@ fn main() {
         }
     }
 }
-
