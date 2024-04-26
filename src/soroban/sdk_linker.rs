@@ -111,6 +111,25 @@ pub fn get_lcs_pattern(function_body: &str, pattern: &str) -> Result<String, Box
 }
 
 fn replace_sequence(pattern: &Pattern, body: &String) -> Option<String> {
+    let prefix_length = pattern.prefix_pattern.len();
+    let mut min_distance_prefix = std::usize::MAX;
+    let mut found_index_prefix = 0;
+
+    // Iterate over the remaining body string for prefix pattern
+    for i in found_index_prefix..=(body.len() - prefix_length) {
+        let window = &body[i..i + prefix_length];
+        let distance = levenshtein(window, &pattern.prefix_pattern);
+
+        // Update minimum distance and found index if a better match is found
+        if distance < min_distance_prefix {
+            min_distance_prefix = distance;
+            found_index_prefix = i;
+            if distance == 0 {
+                break;
+            }
+        }
+    }
+
     let suffix_length = pattern.suffix_pattern.len();
     let mut result = String::new();
     let mut min_distance_suffix = std::usize::MAX;
@@ -131,34 +150,8 @@ fn replace_sequence(pattern: &Pattern, body: &String) -> Option<String> {
         }
     }
 
-    if min_distance_suffix < 5 {
-        let prefix_length = pattern.prefix_pattern.len();
-        let mut min_distance_prefix = std::usize::MAX;
-        let mut found_index_prefix = 0;
-
-        // Iterate over the remaining body string for prefix pattern
-        for i in found_index_suffix..=(body.len() - prefix_length) {
-            let window = &body[i..i + prefix_length];
-            let distance = levenshtein(window, &pattern.prefix_pattern);
-
-            // Update minimum distance and found index if a better match is found
-            if distance < min_distance_prefix {
-                min_distance_prefix = distance;
-                found_index_prefix = i;
-                if distance == 0 {
-                    break;
-                }
-            }
-        }
-
-        // Check if the minimum distance is within the threshold for prefix pattern
-        if min_distance_prefix < 5 {
-            // Construct the result string with the replacement
-            result.push_str(&body[..found_index_prefix]);
-            result.push_str(&pattern.body_replace);
-            result.push_str(&body[found_index_suffix + suffix_length..]);
-            return Some(result);
-        }
-    }
-    None
+    result.push_str(&body[..found_index_prefix]);
+    result.push_str(&pattern.body_replace);
+    result.push_str(&body[found_index_suffix + suffix_length..]);
+    return Some(result);
 }

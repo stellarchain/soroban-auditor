@@ -417,7 +417,6 @@ impl Module {
             imports = take(import_sec.entries_mut());
         }
 
-
         handle_global_section(&mut globals, &module);
         handle_function_section(&mut functions, &module, &types);
         handle_table_section(&mut tables, &mut module);
@@ -554,9 +553,7 @@ fn handle_function_section(
                 .locals()
                 .iter()
                 .flat_map(|locals| iter::repeat(
-
                     ExtendedValueType::new(locals.value_type(), format!("{}", locals.value_type()).as_str())
-
                 ).take(locals.count() as usize))
                 .collect();
 
