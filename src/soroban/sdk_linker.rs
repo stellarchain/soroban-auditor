@@ -1,18 +1,18 @@
-use std::error::Error;
-use std::io::Read;
 use lcs::LcsTable;
 use levenshtein::levenshtein;
+use serde::Deserialize;
+use std::error::Error;
+use std::io::Read;
 use std::{fs::File, io::BufReader};
 use tlsh_fixed::{BucketKind, ChecksumKind, Tlsh, TlshBuilder, TlshError, Version};
-use serde::Deserialize;
-
 
 #[derive(Debug, Deserialize)]
 struct Pattern {
     name: String,
     hash: String,
-    pattern: String,
-    body: String,
+    prefix_pattern: String,
+    suffix_pattern: String,
+    body_replace: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -20,41 +20,61 @@ struct PatternConfig {
     patterns: Vec<Pattern>,
 }
 
+enum ReplacementType {
+    Prefix,
+    Suffix,
+}
+
 pub fn search_for_patterns(function_body: &str) -> Option<String> {
-    let mut replaced_body = function_body.to_string();
+    let mut function_replaced_patterns = function_body.to_string();
     match load_patterns_hash_map() {
         Ok(pattern_config) => {
             for pattern in pattern_config.patterns {
-                match get_lcs_pattern(&replaced_body, &pattern.pattern) {
-                    Ok(common_sequence) => {
-                        match get_sequence_tlsh(&common_sequence) {
-                            Ok(lcs_tlsh) => {
-                                match get_sequence_tlsh(&pattern.pattern) {
-                                    Ok(pattern_tlsh) => {
-                                        let diff = pattern_tlsh.diff(&lcs_tlsh, false);
-                                        if diff < 10 {
-                                           replaced_body = replace_sequence(
-                                                &replaced_body,
-                                                &pattern.pattern,
-                                                &pattern.body).unwrap_or(replaced_body);
+                match (
+                    get_lcs_pattern(&function_replaced_patterns, &pattern.prefix_pattern),
+                    get_lcs_pattern(&function_replaced_patterns, &pattern.suffix_pattern),
+                ) {
+                    (Ok(prefix_common_sequence), Ok(suffix_common_sequence)) => {
+                        match (
+                            get_sequence_tlsh(&prefix_common_sequence),
+                            get_sequence_tlsh(&suffix_common_sequence),
+                        ) {
+                            (Ok(prefix_tlsh), Ok(suffix_tlsh)) => {
+                                match (
+                                    get_sequence_tlsh(&pattern.prefix_pattern),
+                                    get_sequence_tlsh(&pattern.suffix_pattern),
+                                ) {
+                                    (Ok(pattern_prefix_tlsh), Ok(pattern_suffix_tlsh)) => {
+                                        let prefix_diff = pattern_prefix_tlsh.diff(&prefix_tlsh, false);
+                                        let suffix_diff = pattern_suffix_tlsh.diff(&suffix_tlsh, false);
+                                        if prefix_diff < 50 && suffix_diff < 50 {
+                                            function_replaced_patterns =
+                                                replace_sequence(&pattern, &function_replaced_patterns)
+                                                    .unwrap_or(function_replaced_patterns);
                                         }
                                     }
-                                    Err(err) => {
-                                        //println!("Error 1 loading patterns: {}", err);
+                                    (Err(err), _) => {
+                                        println!("Error loading prefix pattern: {}", err);
+                                    }
+                                    (_, Err(err)) => {
+                                        println!("Error loading suffix pattern: {}", err);
                                     }
                                 }
                             }
-                            Err(err) => {
-                                //println!("Error 2 loading patterns: {}", err);
+                            (Err(err), _) => {
+                                println!("Error loading prefix pattern: {}", err);
+                            }
+                            (_, Err(err)) => {
+                                println!("Error loading suffix pattern: {}", err);
                             }
                         }
                     }
-                    Err(err) => {
-                        //println!("Error 3 loading patterns: {}", err);
+                    _ => {
+                        println!("Error loading patterns 3");
                     }
                 }
             }
-            Some(replaced_body)
+            Some(function_replaced_patterns)
         }
         Err(err) => {
             println!("Error loading patterns: {}", err);
@@ -73,6 +93,9 @@ fn load_patterns_hash_map() -> Result<PatternConfig, Box<dyn std::error::Error>>
 }
 
 pub fn get_sequence_tlsh(code: &String) -> Result<Tlsh, TlshError> {
+    if code.len() < 50 {
+        return Err(TlshError::MinSizeNotReached);
+    }
     let mut builder = TlshBuilder::new(BucketKind::Bucket128, ChecksumKind::ThreeByte, Version::Version4);
     builder.update(code.as_bytes());
     builder.build()
@@ -87,29 +110,55 @@ pub fn get_lcs_pattern(function_body: &str, pattern: &str) -> Result<String, Box
     Ok(formatted)
 }
 
-fn replace_sequence(body: &str, sequence_to_replace: &str, replacement_sequence: &str) -> Option<String> {
+fn replace_sequence(pattern: &Pattern, body: &String) -> Option<String> {
+    let suffix_length = pattern.suffix_pattern.len();
     let mut result = String::new();
-    let mut min_distance = std::usize::MAX;
-    let mut found_index = 0;
-    let sequence_length = sequence_to_replace.len();
-    let mut body_index = 0;
+    let mut min_distance_suffix = std::usize::MAX;
+    let mut found_index_suffix = 0;
 
-    while body_index + sequence_length <= body.len() {
-        let window = &body[body_index..body_index + sequence_length];
-        let distance = levenshtein(window, sequence_to_replace);
-        if distance < min_distance {
-            min_distance = distance;
-            found_index = body_index;
+    // Iterate over the body string for suffix pattern
+    for i in 0..=(body.len() - suffix_length) {
+        let window = &body[i..i + suffix_length];
+        let distance = levenshtein(window, &pattern.suffix_pattern);
+
+        // Update minimum distance and found index if a better match is found
+        if distance < min_distance_suffix {
+            min_distance_suffix = distance;
+            found_index_suffix = i;
+            if distance == 0 {
+                break;
+            }
         }
-        body_index += 1;
     }
 
-    if min_distance < 10 {
-        result.push_str(&body[..found_index]);
-        result.push_str(replacement_sequence);
-        result.push_str(&body[found_index + sequence_length..]);
-        Some(result)
-    } else {
-        None
+    if min_distance_suffix < 5 {
+        let prefix_length = pattern.prefix_pattern.len();
+        let mut min_distance_prefix = std::usize::MAX;
+        let mut found_index_prefix = 0;
+
+        // Iterate over the remaining body string for prefix pattern
+        for i in found_index_suffix..=(body.len() - prefix_length) {
+            let window = &body[i..i + prefix_length];
+            let distance = levenshtein(window, &pattern.prefix_pattern);
+
+            // Update minimum distance and found index if a better match is found
+            if distance < min_distance_prefix {
+                min_distance_prefix = distance;
+                found_index_prefix = i;
+                if distance == 0 {
+                    break;
+                }
+            }
+        }
+
+        // Check if the minimum distance is within the threshold for prefix pattern
+        if min_distance_prefix < 5 {
+            // Construct the result string with the replacement
+            result.push_str(&body[..found_index_prefix]);
+            result.push_str(&pattern.body_replace);
+            result.push_str(&body[found_index_suffix + suffix_length..]);
+            return Some(result);
+        }
     }
+    None
 }
