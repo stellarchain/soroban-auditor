@@ -23,7 +23,7 @@ pub trait CodeDisplay {
 
 impl CodeDisplay for &str {
     fn fmt_code(&self, f: &mut CodeWriter) {
-        write!(f, "{}", self);
+        write!(f, "{}", self)
     }
 }
 
@@ -280,7 +280,7 @@ impl CodeWriter {
     }
 
     pub fn write_body(&mut self, code: &[Stmt]) {
-        self.write(&code[..]);
+        self.write(&code[..])
     }
 
     pub fn prettify(code: &str) -> Result<String, Error> {

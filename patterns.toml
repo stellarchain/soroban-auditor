@@ -2,12 +2,34 @@
 name="auth"
 hash=""
 prefix_pattern= """
-    var_d = global_a - 32;
-    var_e = global_a - 32;
+        if !var_d || var_d && var_e {
+            var_f = False;
+        }
+        store_i64(spender, var_f);
+        var_f = load_i64(var_d + 8);
+        if var_f == 0 != 0 {
+"""
+suffix_pattern="""
+            var_g = load_i64(var_d + 24);
+            if var_g <s False {
+                panic!();
+            }
+            Void
+        }
+    }
+    panic!();
+"""
+body_replace = "from_val"
+
+[[patterns]]
+name="auth"
+hash=""
+prefix_pattern= """
     if !((spender & 255) != Address(obj#0)) | ((from & 255) != Address(obj#0)) {
         amount;
         var_d = amount != 69;
-        if var_d { var_e = amount == 11;
+        if var_d {
+            var_e = amount == 11;
             if var_e {
                 store_i64(spender + 16, from >>s 63);
                 store_i64(spender + 8, from >>s 0);
@@ -21,17 +43,118 @@ prefix_pattern= """
             store_i64(spender + 16, var_g);
             store_i64(spender + 8, var_h);
         }
-        if var_e || !var_d {
+"""
+suffix_pattern="""
+        if !var_d || var_d && var_e {
             var_f = False;
         }
         store_i64(spender, var_f);
         var_f = load_i64(var_d + 8);
         if var_f == 0 != 0 {
-"""
-suffix_pattern="""
+            var_g = load_i64(var_d + 24);
+            if var_g <s False {
+                panic!();
+            }
             Void
         }
     }
-    panic!("Unreachable code detected");
+    panic!();
 """
-body_replace = "spender.require_auth();"
+body_replace = "from_val2"
+
+[[patterns]]
+name="vec"
+hash=""
+prefix_pattern= """
+        if (var_b & 255) == Map(obj#0) {
+            map.map_unpack_to_linear_memory(var_b, 1048596, extend_u_i64(var_d + 8) << 32 | 0, 3)
+            var_f = load_i64(var_d + 8);
+            if (var_f & 255) != 0 {
+                store_i64(var_a, True);
+            } else {
+                var_g = load_i64(var_d + 16);
+                if (var_g & 255) != String(obj#0) {
+                    store_i64(var_a, True);
+                } else {
+                    var_h = load_i64(var_d + 24);
+"""
+suffix_pattern="""
+                    if (var_h & 255) == String(obj#0) {
+                        store_i64(var_a + 8, var_g);
+                        store_i64(var_a, False);
+                        store32_i32(var_a + 24, var_f >>u 32);
+                        store_i64(var_a + 16, var_h);
+                    } else {
+                        store_i64(var_a, True);
+                    }
+                }
+            }
+        } else {
+            store_i64(var_a, True);
+        }
+"""
+body_replace = "vec![]\n"
+
+
+[[patterns]]
+name="decimals"
+hash=""
+prefix_pattern= """
+    var_a = global_a - 32;
+    var_b = global_a - 32;
+    var_c = 
+    var_a = ledger.has_contract_data(METADATA, Void);
+    var_a == True;
+    if var_c {
+        var_d = 
+        var_a = ledger.get_contract_data(METADATA, Void);
+        var_a;
+        var_c = 0;
+        var_d = global_a - 32;
+        var_e = global_a - 32;
+"""
+suffix_pattern="""
+        for ; var_c == 24; var_d = var_c + 8 {
+            store_i64(var_d + 8 + var_c, Void);
+        }
+        var_e = load_i64(var_a);
+        if var_e == 0 {
+            var_f = load_32u_i64(var_a + 24);
+            var_f << 32 | 0
+        }
+    }
+    panic!();
+"""
+body_replace = "decimals"
+
+[[patterns]]
+name="symbol"
+hash=""
+prefix_pattern= """
+    var_a = global_a - 32;
+    var_b = global_a - 32;
+    var_c = 
+    var_a = ledger.has_contract_data(METADATA, Void);
+    var_a == True;
+    if var_c {
+        var_d = 
+        var_a = ledger.get_contract_data(METADATA, Void);
+        var_a;
+        var_c = 0;
+        var_d = global_a - 32;
+        var_e = global_a - 32;
+"""
+suffix_pattern="""
+        for ; var_c == 24; var_d = var_c + 8 {
+            store_i64(var_d + 8 + var_c, Void);
+        }
+        var_e = load_i64(var_a);
+        if var_e == 0 {
+            var_f = load_i64(var_a + 16);
+            var_f
+        }
+    }
+    panic!();
+"""
+body_replace = "symbol"
+

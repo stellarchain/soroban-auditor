@@ -47,8 +47,8 @@ pub fn search_for_patterns(function_body: &str) -> Option<String> {
                                     (Ok(pattern_prefix_tlsh), Ok(pattern_suffix_tlsh)) => {
                                         let prefix_diff = pattern_prefix_tlsh.diff(&prefix_tlsh, false);
                                         let suffix_diff = pattern_suffix_tlsh.diff(&suffix_tlsh, false);
-                                        if prefix_diff < 50 && suffix_diff < 50 {
-                                            function_replaced_patterns =
+                                        if prefix_diff < 30  && suffix_diff < 30 {
+                                             function_replaced_patterns =
                                                 replace_sequence(&pattern, &function_replaced_patterns)
                                                     .unwrap_or(function_replaced_patterns);
                                         }
@@ -96,7 +96,7 @@ pub fn get_sequence_tlsh(code: &String) -> Result<Tlsh, TlshError> {
     if code.len() < 50 {
         return Err(TlshError::MinSizeNotReached);
     }
-    let mut builder = TlshBuilder::new(BucketKind::Bucket128, ChecksumKind::ThreeByte, Version::Version4);
+    let mut builder = TlshBuilder::new(BucketKind::Bucket128, ChecksumKind::OneByte, Version::Version4);
     builder.update(code.as_bytes());
     builder.build()
 }
@@ -110,48 +110,33 @@ pub fn get_lcs_pattern(function_body: &str, pattern: &str) -> Result<String, Box
     Ok(formatted)
 }
 
-fn replace_sequence(pattern: &Pattern, body: &String) -> Option<String> {
-    let prefix_length = pattern.prefix_pattern.len();
-    let mut min_distance_prefix = std::usize::MAX;
-    let mut found_index_prefix = 0;
+fn replace_sequence(pattern: &Pattern, body: &str) -> Option<String> {
+    match find_best_match(body, &pattern.prefix_pattern, &pattern.suffix_pattern) {
+        (Some(prefix_found_index), Some(suffix_found_index)) => {
+            let prefix = &body[..prefix_found_index];
+            let suffix = &body[suffix_found_index + pattern.suffix_pattern.as_str().len()..];
+            let replaced_body = format!("{}{}", prefix, pattern.body_replace);
+            Some(format!("{}{}", replaced_body, suffix))
+        }
+        _ => None,
+    }
+}
 
-    // Iterate over the remaining body string for prefix pattern
-    for i in found_index_prefix..=(body.len() - prefix_length) {
-        let window = &body[i..i + prefix_length];
-        let distance = levenshtein(window, &pattern.prefix_pattern);
+fn find_best_match(body: &str, prefix_pattern: &str, suffix_pattern: &str) -> (Option<usize>, Option<usize>) {
+    let mut min_distance = std::usize::MAX;
+    let mut found_index_prefix = None;
+    let mut found_index_suffix = None;
 
-        // Update minimum distance and found index if a better match is found
-        if distance < min_distance_prefix {
-            min_distance_prefix = distance;
-            found_index_prefix = i;
-            if distance == 0 {
-                break;
-            }
+    for i in 0..(body.len() - (prefix_pattern.len() + suffix_pattern.len())) {
+        let window = &body[i..i + prefix_pattern.len() + suffix_pattern.len()];
+        let distance = levenshtein(window, prefix_pattern) + levenshtein(&window[prefix_pattern.len() ..], suffix_pattern);
+
+        if distance < min_distance {
+            min_distance = distance;
+            found_index_prefix = Some(i);
+            found_index_suffix = Some(i + prefix_pattern.len());
         }
     }
 
-    let suffix_length = pattern.suffix_pattern.len();
-    let mut result = String::new();
-    let mut min_distance_suffix = std::usize::MAX;
-    let mut found_index_suffix = 0;
-
-    // Iterate over the body string for suffix pattern
-    for i in 0..=(body.len() - suffix_length) {
-        let window = &body[i..i + suffix_length];
-        let distance = levenshtein(window, &pattern.suffix_pattern);
-
-        // Update minimum distance and found index if a better match is found
-        if distance < min_distance_suffix {
-            min_distance_suffix = distance;
-            found_index_suffix = i;
-            if distance == 0 {
-                break;
-            }
-        }
-    }
-
-    result.push_str(&body[..found_index_prefix]);
-    result.push_str(&pattern.body_replace);
-    result.push_str(&body[found_index_suffix + suffix_length..]);
-    return Some(result);
+    (found_index_prefix, found_index_suffix)
 }

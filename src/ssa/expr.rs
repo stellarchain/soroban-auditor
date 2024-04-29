@@ -1,3 +1,5 @@
+use std::fmt::Formatter;
+use std::fmt::Display;
 use crate::ssa::Stmt;
 use regex::Regex;
 use crate::soroban::FunctionInfo;
@@ -5,7 +7,7 @@ use std::collections::HashMap;
 
 use soroban_sdk::Val;
 
-use crate::fmt;
+use crate::fmt::{self, CodeDisplay};
 use crate::wasm_wrapper::wasm::TableElement;
 use crate::wasm_wrapper::wasm_adapter::{ValueType, self};
 
@@ -671,6 +673,14 @@ pub fn write_call(f: &mut fmt::CodeWriter, index: u32, args: &[Expr]) -> Option<
     }
 }
 
+impl Display for Expr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            _ => write!(f, "")
+        }
+    }
+}
+
 impl fmt::CodeDisplay for Expr {
     fn fmt_code(&self, f: &mut fmt::CodeWriter) {
         match self {
@@ -684,7 +694,7 @@ impl fmt::CodeDisplay for Expr {
             }
             Expr::Call(index, args) => {
                 if let Some(code) = write_call(f, *index, args) {
-                    f.write_body(&code);
+                    f.write_body(&code)
                 }
             }
             Expr::CallIndirect(index, args, sig) => {
@@ -782,7 +792,10 @@ impl fmt::CodeDisplay for Expr {
                         t = "BALANCE_BUMP_AMOUNT".to_string();
                     } else if t == format!("{}", BALANCE_LIFETIME_THRESHOLD) {
                         t = "BALANCE_LIFETIME_THRESHOLD".to_string();
+                    } else if t == format!("{}", INSTANCE_BUMP_AMOUNT) {
+                        t = "INSTANCE_BUMP_AMOUNT".to_string();
                     } 
+
                     write!(f, "{}", t)
                 } else {
                     write!(f, "{}", *val as i64)
