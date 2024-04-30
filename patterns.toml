@@ -22,7 +22,7 @@ suffix_pattern="""
 body_replace = "from_val"
 
 [[patterns]]
-name="auth"
+name="convert"
 hash=""
 prefix_pattern= """
     if !((spender & 255) != Address(obj#0)) | ((from & 255) != Address(obj#0)) {
@@ -60,7 +60,7 @@ suffix_pattern="""
     }
     panic!();
 """
-body_replace = "from_val2"
+body_replace = "V::try_from_val(&self.env, &rv).unwrap_optimized()"
 
 [[patterns]]
 name="vec"
