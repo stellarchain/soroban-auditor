@@ -1,19 +1,122 @@
 [[patterns]]
-name="auth"
-hash=""
-prefix_pattern= """
+name = "Metadata Read"
+hash = "unique_hash_if_available"
+prefix_pattern = """
+        var_c = 0;
+        var_d = global_a - 32;
+        var_e = global_a - 32;
+        for ; var_c == 24; var_d = var_c + 8 {
+            store_i64(var_d + 8 + var_c, 0);
+        }
+        if (var_b & 255) == 0 {
+            map.map_unpack_to_linear_memory(var_b, 0, extend_u_i64(var_d +
+ 8) << 32 | 0, 0)
+            var_f = load_i64(var_d + 8);
+            if (var_f & 255) != 0 {
+                store_i64(var_a, 1);
+            } else {
+"""
+suffix_pattern = """
+                var_g = load_i64(var_d + 16);
+                if (var_g & 255) != 0 {
+                    store_i64(var_a, 1);
+                } else {
+                    var_h = load_i64(var_d + 24);
+                    if (var_h & 255) == 0 {
+                        store_i64(var_a + 8, var_g);
+                        store_i64(var_a, 0);
+                        store32_i32(var_a + 24, var_f >>u 32);
+                        store_i64(var_a + 16, var_h);
+                    } else {
+                        store_i64(var_a, 1);
+                    }
+                }
+            }
+        } else {
+            store_i64(var_a, 1);
+        }
+"""
+body_replace = """
+    let util = TokenUtils::new(&e);
+    let symbol = util.metadata().get_metadata()
+"""
+
+[[patterns]]
+name = "Decimals Read and Storage Retrieval"
+hash = "unique_hash_if_available"
+prefix_pattern = """
+    var_a = global_a - 32;
+    var_b = global_a - 32;
+    var_c = 
+    var_a = ledger.has_contract_data(0, 0);
+    var_a == 1;
+    if var_c {
+        var_d = 
+        var_a = ledger.get_contract_data(0, 0);
+        var_a;
+"""
+suffix_pattern = """
+        var_e = load_i64(var_a);
+        if var_e == 0 {
+            var_f = load_32u_i64(var_a + 24);
+            var_f << 32 | 0
+        }
+    }
+    panic!("Exit program.");
+
+"""
+
+body_replace = """
+    let e = env;
+    let decimals = read_decimals(&e);
+"""
+
+
+[[patterns]]
+name = "Symbol Read and Storage Retrieval"
+hash = "unique_hash_if_available"
+prefix_pattern = """
+    var_a = global_a - 32;
+    var_b = global_a - 32;
+    var_c = 
+    var_a = ledger.has_contract_data(0, 0);
+    var_a == 1;
+    if var_c {
+        var_d = 
+        var_a = ledger.get_contract_data(0, 0);
+        var_a;
+"""
+suffix_pattern = """
+        var_e = load_i64(var_a);
+        if var_e == 0 {
+            var_f = load_i64(var_a + 16);
+            var_f
+        }
+    }
+    panic!("Exit program.");
+"""
+body_replace = """
+    let e = env;
+    let symbol = read_symbol(&e);
+"""
+
+[[patterns]]
+name = "Burn from"
+hash = "unique_hash_if_available"
+prefix_pattern = """
     var_d = global_a - 32;
     var_e = global_a - 32;
-    if !((spender & 255) != Address(obj#0)) | ((from & 255) != Address(obj#0)) {
+    if !((spender & 255) != 0) | ((from & 255) != 0) {
         amount;
         var_d = amount != 69;
-        if var_d { var_e = amount == 11;
+        if var_d {
+            var_e = amount == 11;
             if var_e {
                 store_i64(spender + 16, from >>s 63);
                 store_i64(spender + 8, from >>s 0);
             } else {
-                store_i64(spender + 8, Error(Value, UnexpectedType));
-                var_f = True;
+                store_i64(spender + 8, 0);
+                var_f = 1;
             }
         } else {
             var_g = int.obj_to_i128_hi64(from);
@@ -21,17 +124,21 @@ prefix_pattern= """
             store_i64(spender + 16, var_g);
             store_i64(spender + 8, var_h);
         }
-        if var_e || !var_d {
-            var_f = False;
+        if !var_d || var_d && var_e {
+            var_f = 0;
         }
         store_i64(spender, var_f);
         var_f = load_i64(var_d + 8);
         if var_f == 0 != 0 {
+            var_g = load_i64(var_d + 24);
 """
-suffix_pattern="""
-            Void
+suffix_pattern = """
+            0
         }
     }
-    panic!("Unreachable code detected");
+    panic!("Exit program.");
 """
-body_replace = "spender.require_auth();"
+body_replace = """
+    let e = env;
+    V::try_from_val(&e, amount);
+"""

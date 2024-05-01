@@ -783,7 +783,7 @@ impl fmt::CodeDisplay for Expr {
                     } else if t == format!("{}", BALANCE_LIFETIME_THRESHOLD) {
                         t = "BALANCE_LIFETIME_THRESHOLD".to_string();
                     } 
-                    write!(f, "{}", t)
+                    write!(f, "{}", if t == "True" { 1 } else { 0 })
                 } else {
                     write!(f, "{}", *val as i64)
                 }
@@ -797,14 +797,14 @@ impl fmt::CodeDisplay for Expr {
             }
             Expr::I32Eq(a, b) => write_binop(f, " == ", self, a, b),
             Expr::I32Ne(a, b) => write_binop(f, " != ", self, a, b),
-            Expr::I32LtS(a, b) => write_binop(f, " <s ", self, a, b),
-            Expr::I32LtU(a, b) => write_binop(f, " <u ", self, a, b),
-            Expr::I32GtS(a, b) => write_binop(f, " >s ", self, a, b),
-            Expr::I32GtU(a, b) => write_binop(f, " >u ", self, a, b),
-            Expr::I32LeS(a, b) => write_binop(f, " <=s ", self, a, b),
-            Expr::I32LeU(a, b) => write_binop(f, " <=u ", self, a, b),
-            Expr::I32GeS(a, b) => write_binop(f, " >=s ", self, a, b),
-            Expr::I32GeU(a, b) => write_binop(f, " >=u ", self, a, b),
+            Expr::I32LtS(a, b) => write_binop(f, " < ", self, a, b),
+            Expr::I32LtU(a, b) => write_binop(f, " < ", self, a, b),
+            Expr::I32GtS(a, b) => write_binop(f, " > ", self, a, b),
+            Expr::I32GtU(a, b) => write_binop(f, " > ", self, a, b),
+            Expr::I32LeS(a, b) => write_binop(f, " <= ", self, a, b),
+            Expr::I32LeU(a, b) => write_binop(f, " <= ", self, a, b),
+            Expr::I32GeS(a, b) => write_binop(f, " >= ", self, a, b),
+            Expr::I32GeU(a, b) => write_binop(f, " >= ", self, a, b),
 
             Expr::I64Eqz(arg) => {
                 write_paren(f, self, arg);
@@ -812,14 +812,14 @@ impl fmt::CodeDisplay for Expr {
             }
             Expr::I64Eq(a, b) => write_binop(f, " == ", self, a, b),
             Expr::I64Ne(a, b) => write_binop(f, " != ", self, a, b),
-            Expr::I64LtS(a, b) => write_binop(f, " <s ", self, a, b),
-            Expr::I64LtU(a, b) => write_binop(f, " <u ", self, a, b),
-            Expr::I64GtS(a, b) => write_binop(f, " >s ", self, a, b),
-            Expr::I64GtU(a, b) => write_binop(f, " >u ", self, a, b),
-            Expr::I64LeS(a, b) => write_binop(f, " <=s ", self, a, b),
-            Expr::I64LeU(a, b) => write_binop(f, " <=u ", self, a, b),
-            Expr::I64GeS(a, b) => write_binop(f, " >=s ", self, a, b),
-            Expr::I64GeU(a, b) => write_binop(f, " >=u ", self, a, b),
+            Expr::I64LtS(a, b) => write_binop(f, " < ", self, a, b),
+            Expr::I64LtU(a, b) => write_binop(f, " < ", self, a, b),
+            Expr::I64GtS(a, b) => write_binop(f, " > ", self, a, b),
+            Expr::I64GtU(a, b) => write_binop(f, " > ", self, a, b),
+            Expr::I64LeS(a, b) => write_binop(f, " <= ", self, a, b),
+            Expr::I64LeU(a, b) => write_binop(f, " <= ", self, a, b),
+            Expr::I64GeS(a, b) => write_binop(f, " >= ", self, a, b),
+            Expr::I64GeU(a, b) => write_binop(f, " >= ", self, a, b),
 
             Expr::F32Eq(a, b) => write_binop(f, " == ", self, a, b),
             Expr::F32Ne(a, b) => write_binop(f, " != ", self, a, b),

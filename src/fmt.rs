@@ -215,7 +215,7 @@ impl CodeWriter {
             };
 
             self.write(formatted.as_str());
-            return; // Exit early
+            return;
         }
 
         // If no spec, continue with default behavior
