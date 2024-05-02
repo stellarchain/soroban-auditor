@@ -54,7 +54,6 @@ impl Instance {
         let mut printer = CodeWriter::printer(Rc::new(self.clone()), func_index);
         let empty_args: &[Expr] = &[];
         let code = printer.decompile_func(func_index as u32, false, empty_args).unwrap();
-        printer.write_func(&code, false);
         Ok(())
     }
 }
