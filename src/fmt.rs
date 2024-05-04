@@ -126,8 +126,8 @@ impl CodeWriter {
         fmt.fmt_code(self)
     }
 
-    pub fn string_func(&mut self, fmt: impl CodeDisplay) -> String {
-        fmt.create_str(self.wasm.clone(), self.func_index)
+    pub fn string_func(&mut self, fmt: impl CodeDisplay, index: u32) -> String {
+        fmt.create_str(self.wasm.clone(), index)
     }
 
     pub fn write_fmt(&mut self, args: std::fmt::Arguments) {
@@ -148,11 +148,11 @@ impl CodeWriter {
 
         let (_decls, code) = structuring::structure(cfg);
         let mut printer = CodeWriter::printer(self.wasm.clone(), func_index);
-        printer.write_func(&code);
+        printer.write_func(&code, func_index);
         Ok(code)
     }
 
-    pub fn write_func(&mut self, code: &[Stmt]) {
+    pub fn write_func(&mut self, code: &[Stmt], index: u32) {
         let func = self.func();
         let ret_type = match func.return_type() {
             Some(type_ret) => type_ret.to_string(),
@@ -196,7 +196,7 @@ impl CodeWriter {
 
         let mut code_to_write = String::new();
         code_to_write.push_str(func_header.as_str());
-        let code_string = &self.string_func(&code[..]);
+        let code_string = &self.string_func(&code[..], index);
         let code_clean = self.clean_lines(code_string);
 
         let enable_lsh = true;

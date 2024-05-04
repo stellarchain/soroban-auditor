@@ -6,10 +6,9 @@ use std::io::Read;
 use std::{fs::File, io::BufReader};
 use tlsh_fixed::{BucketKind, ChecksumKind, Tlsh, TlshBuilder, TlshError, Version};
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Eq, Clone, Hash, PartialEq)]
 pub struct Pattern {
     name: String,
-    hash: String,
     pattern: String,
     body_replace: String,
 }

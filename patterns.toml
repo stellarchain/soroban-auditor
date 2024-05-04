@@ -1,6 +1,72 @@
 [[patterns]]
 name = "function_name2({args})"
-hash = "unique_hash_if_available"
+pattern = """
+    var_c = ledger.has_contract_data(arg_a, arg_b);
+    var_c == 1
+"""
+body_replace = """
+    V::has_contract(&e, amount)
+"""
+
+[[patterns]]
+name = "function_name2({args})"
+pattern = """
+    if arg_c != arg_e {
+        panic!("Exit program.");
+    }
+    map.map_unpack_to_linear_memory(
+        arg_a,
+        extend_u_i64(arg_b) << 32 | 0,
+        extend_u_i64(arg_d) << 32 | 0,
+        extend_u_i64(arg_c) << 32 | 0,
+    )
+"""
+body_replace = """
+    let e = Env;
+    V::try_from_val_u128(&e, amount)
+"""
+
+[[patterns]]
+name = "function_name2({args})"
+pattern = """
+    var_c = 0;
+    var_d = global_a - 32;
+    var_e = global_a - 32;
+    for ; var_c == 24; var_d = var_c + 8 {
+        store_i64(var_d + 8 + var_c, 0);
+    }
+    if (arg_b & 255) == 0 {
+        func_26(arg_b, 1048816, 3, var_d + 8, 3)
+        var_f = load_i64(var_d + 8);
+        if (var_f & 255) != 0 {
+            store_i64(arg_a, 1);
+        } else {
+            var_g = load_i64(var_d + 16);
+            if (var_g & 255) != 0 {
+                store_i64(arg_a, 1);
+            } else {
+                var_h = load_i64(var_d + 24);
+                if (var_h & 255) == 0 {
+                    store_i64(arg_a + 8, var_g);
+                    store_i64(arg_a, 0);
+                    store32_i32(arg_a + 24, var_f >> 32);
+                    store_i64(arg_a + 16, var_h);
+                } else {
+                    store_i64(arg_a, 1);
+                }
+            }
+        }
+    } else {
+        store_i64(arg_a, 1);
+    }
+"""
+body_replace = """
+    let e = Env;
+    V::try_from_val_i128(&e, amount)
+"""
+
+[[patterns]]
+name = "function_name2({args})"
 pattern = """
     var_c = wrap_i32(arg_b) & 255;
     var_d = var_c != 69;
@@ -32,7 +98,6 @@ body_replace = """
 
 [[patterns]]
 name = "function_name({args})"
-hash = "unique_hash_if_available"
 pattern = """var_c = 0;
     if arg_b <= 9 {
         var_d = arg_b;

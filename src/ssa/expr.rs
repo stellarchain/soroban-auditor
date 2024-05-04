@@ -1,17 +1,15 @@
+use crate::soroban::search_for_patterns;
 use crate::soroban::FunctionInfo;
-use crate::ssa::Stmt;
 use regex::Regex;
 use std::collections::HashMap;
 use std::collections::HashSet;
-
 use soroban_sdk::Val;
-
 use super::Var;
 use crate::fmt;
 use crate::wasm_wrapper::wasm::TableElement;
 use crate::wasm_wrapper::wasm_adapter::{self, ValueType};
 use lazy_static::lazy_static;
-use std::sync::{RwLock, RwLockWriteGuard};
+use std::sync::RwLock;
 
 const DAY_IN_LEDGERS: u32 = 17280;
 const INSTANCE_BUMP_AMOUNT: u32 = 7 * DAY_IN_LEDGERS;
@@ -20,7 +18,7 @@ const BALANCE_BUMP_AMOUNT: u32 = 30 * DAY_IN_LEDGERS;
 const BALANCE_LIFETIME_THRESHOLD: u32 = BALANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
 
 lazy_static! {
-    static ref DECOMPILED_FUNCS: RwLock<HashSet<u32>> = RwLock::new(HashSet::new());
+   pub static ref DISASSEMBLED_FUNCTIONS: RwLock<HashSet<u32>> = RwLock::new(HashSet::new());
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -670,13 +668,26 @@ pub fn write_call(f: &mut fmt::CodeWriter, index: u32, args: &[Expr]) {
     }
     f.write(")");
 
-    let mut decompiled_funcs_guard = DECOMPILED_FUNCS.write().unwrap();
-    if !decompiled_funcs_guard.contains(&index) {
-        drop(decompiled_funcs_guard);
+    let mut disassembled_functions_guard = DISASSEMBLED_FUNCTIONS.write().unwrap();
+
+    if !disassembled_functions_guard.contains(&index) {
+        drop(disassembled_functions_guard);
         let code = f.decompile_func(index, true, args).ok();
-        decompiled_funcs_guard = DECOMPILED_FUNCS.write().unwrap();
-        if !decompiled_funcs_guard.contains(&index) {
-            decompiled_funcs_guard.insert(index);
+        let code_string = match code {
+            Some(code) => {
+                f.string_func(&code[..], index)
+            },
+            None => String::new(),
+        };
+
+        let code_clean = f.clean_lines(&code_string);
+        let replaced_body = search_for_patterns(&code_clean);
+        if let Some(replaced_body_value) = replaced_body {
+            println!("{}", replaced_body_value);
+        } 
+        disassembled_functions_guard = DISASSEMBLED_FUNCTIONS.write().unwrap();
+        if !disassembled_functions_guard.contains(&index) {
+            disassembled_functions_guard.insert(index);
         }
     }
 }
@@ -789,7 +800,19 @@ impl fmt::CodeDisplay for Expr {
                     } else if t == format!("{}", BALANCE_LIFETIME_THRESHOLD) {
                         t = "BALANCE_LIFETIME_THRESHOLD".to_string();
                     }
-                    write!(f, "{}", if t == "True" { 1 } else { 0 })
+                    write!(
+                        f,
+                        "{}",
+                        if t == "True" {
+                            "1"
+                        } else if t == "False" {
+                            "0"
+                        } else if t == "Void" {
+                            "0"
+                        } else {
+                            &t
+                        }
+                    )
                 } else {
                     write!(f, "{}", *val as i64)
                 }
