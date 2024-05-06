@@ -18,7 +18,8 @@ struct PatternConfig {
     patterns: Vec<Pattern>,
 }
 
-pub fn search_for_patterns(function_body: &str) -> Option<String> {
+pub fn search_for_patterns(function_body: &str) -> Option<Vec<(String, String)>> {
+    let mut found_patterns = Vec::new();
     let mut function_replaced_patterns = function_body.to_string();
     let cleaned_function_body = function_body.replace(" ", "").replace("\n", "");
     match load_patterns_hash_map() {
@@ -26,26 +27,30 @@ pub fn search_for_patterns(function_body: &str) -> Option<String> {
             for pattern in &pattern_config.patterns {
                 let cleaned_pattern = &pattern.pattern.replace(" ", "").replace("\n", "");
                 if let Ok(common_sequence) = get_lcs_pattern(&cleaned_function_body, &cleaned_pattern) {
-                    if let Ok(tlsh_sequence) = get_sequence_tlsh(&common_sequence) {
-                        if let Ok(pattern_tlsh) = get_sequence_tlsh(&cleaned_pattern) {
-                            let diff = pattern_tlsh.diff(&tlsh_sequence, false);
-                            if diff < 50 {
-                                if let Some(replaced) = replace_sequence(&pattern, &function_replaced_patterns) {
-                                    function_replaced_patterns = replaced;
+                    match get_sequence_tlsh(&common_sequence) {
+                        Ok(tlsh_sequence) => match get_sequence_tlsh(&cleaned_pattern) {
+                            Ok(pattern_tlsh) => {
+                                let diff = pattern_tlsh.diff(&tlsh_sequence, false);
+                                if diff < 50 {
+                                    if let Some(replaced) = replace_sequence(&pattern, &function_replaced_patterns) {
+                                        function_replaced_patterns = replaced;
+                                        found_patterns.push((pattern.name.clone(), function_replaced_patterns.clone()));
+                                        return Some(found_patterns);
+                                    }
                                 }
                             }
-                        } else {
-                            println!("Error loading pattern for {}: ", pattern.name);
-                        }
-                    } else {
-                        println!("Error loading pattern for {}", pattern.name);
+                            Err(_) => {},
+                        },
+                        Err(_) => {},
                     }
                 } else {
                     println!("Error loading pattern for {}", pattern.name);
                 }
             }
-
-            Some(function_replaced_patterns)
+            if found_patterns.len() > 0 {
+                return Some(found_patterns);
+            }
+            None
         }
         Err(err) => {
             println!("Error loading patterns: {}", err);
@@ -88,7 +93,7 @@ fn calculate_score_for_pattern(function_body: &str, pattern: &str) -> usize {
 }
 
 fn load_patterns_hash_map() -> Result<PatternConfig, Box<dyn std::error::Error>> {
-    let file = File::open("patterns.toml")?;
+    let file = File::open("src/soroban/patterns/sac_contract.toml")?;
     let mut reader = BufReader::new(file);
     let mut content = String::new();
     reader.read_to_string(&mut content)?;

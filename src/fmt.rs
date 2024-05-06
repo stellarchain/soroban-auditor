@@ -188,28 +188,37 @@ impl CodeWriter {
             }
         };
 
-        let func_header = if return_type.len() > 0 {
+        let mut func_header = if return_type.len() > 0 {
             format!("pub fn {}({}) -> {} {{\n", func.name(), params, return_type)
         } else {
             format!("pub fn {}({}) {{\n", func.name(), params)
         };
 
         let mut code_to_write = String::new();
-        code_to_write.push_str(func_header.as_str());
         let code_string = &self.string_func(&code[..], index);
         let code_clean = self.clean_lines(code_string);
-
+        let mut new_code = String::new();
         let enable_lsh = true;
         if enable_lsh {
             let replaced_body = search_for_patterns(&code_clean);
             if let Some(replaced_body_value) = replaced_body {
-                code_to_write.push_str(&replaced_body_value.as_str());
+                for (pattern_name, body) in replaced_body_value {
+                    new_code.push_str(&body);
+                    func_header = if return_type.len() > 0 {
+                        format!("pub fn {}({}) -> {} {{\n", pattern_name, params, return_type)
+                    } else {
+                        format!("pub fn {}({}) {{\n", pattern_name, params)
+                    };
+                }
             } else {
-                code_to_write.push_str(&code_clean[..]);
+                new_code.push_str(&code_clean[..]);
             }
         } else {
-            code_to_write.push_str(&code_clean[..]);
+            new_code.push_str(&code_clean[..]);
         }
+
+        code_to_write.push_str(func_header.as_str());
+        code_to_write.push_str(new_code.as_str());
         code_to_write.push_str("\n}\n");
 
         let formatted = match CodeWriter::prettify(&code_to_write) {
@@ -217,7 +226,7 @@ impl CodeWriter {
             Err(_) => code_to_write,
         };
 
-        self.write(formatted.as_str());
+        self.write(&formatted.as_str());
     }
 
     pub fn suppress_newline(&mut self) {

@@ -1,14 +1,14 @@
-use crate::soroban::search_for_patterns;
-use crate::soroban::FunctionInfo;
-use regex::Regex;
-use std::collections::HashMap;
-use std::collections::HashSet;
-use soroban_sdk::Val;
 use super::Var;
 use crate::fmt;
+use crate::soroban::search_for_patterns;
+use crate::soroban::FunctionInfo;
 use crate::wasm_wrapper::wasm::TableElement;
 use crate::wasm_wrapper::wasm_adapter::{self, ValueType};
 use lazy_static::lazy_static;
+use regex::Regex;
+use soroban_sdk::Val;
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::RwLock;
 
 const DAY_IN_LEDGERS: u32 = 17280;
@@ -18,7 +18,11 @@ const BALANCE_BUMP_AMOUNT: u32 = 30 * DAY_IN_LEDGERS;
 const BALANCE_LIFETIME_THRESHOLD: u32 = BALANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
 
 lazy_static! {
-   pub static ref DISASSEMBLED_FUNCTIONS: RwLock<HashSet<u32>> = RwLock::new(HashSet::new());
+    pub static ref DISASSEMBLED_FUNCTIONS_INDEX: RwLock<HashSet<u32>> = RwLock::new(HashSet::new());
+}
+
+lazy_static! {
+    pub static ref DISASSEMBLED_FUNCTIONS: RwLock<HashMap<u32, String>> = RwLock::new(HashMap::new());
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -657,7 +661,40 @@ fn write_binop_func(f: &mut fmt::CodeWriter, name: &'static str, a: &Expr, b: &E
 }
 
 pub fn write_call(f: &mut fmt::CodeWriter, index: u32, args: &[Expr]) {
-    let func_name = f.module().func(index).name().to_string();
+    let mut func_name = f.module().func(index).name().to_string();
+
+    let mut disassembled_functions_guard_index = DISASSEMBLED_FUNCTIONS_INDEX.write().unwrap();
+    if !disassembled_functions_guard_index.contains(&index) {
+        drop(disassembled_functions_guard_index); // Release the read lock
+
+        let patterns_vec = {
+            let code = f.decompile_func(index, true, args).ok();
+            let code_string = match code {
+                Some(code) => f.string_func(&code[..], index),
+                None => String::new(),
+            };
+
+            let code_clean = f.clean_lines(&code_string);
+            search_for_patterns(&code_clean)
+        };
+
+        if let Some(patterns) = patterns_vec {
+            let mut disassembled_functions_guard_body = DISASSEMBLED_FUNCTIONS.write().unwrap();
+
+            for (pattern_name, _body_code) in patterns {
+                let combined_value = (index, pattern_name.clone());
+                disassembled_functions_guard_body.insert(index, pattern_name.clone());
+                func_name = pattern_name.clone();
+            }
+        }
+        disassembled_functions_guard_index = DISASSEMBLED_FUNCTIONS_INDEX.write().unwrap();
+        disassembled_functions_guard_index.insert(index);
+    } else {
+        let disassembled_functions_guard_body = DISASSEMBLED_FUNCTIONS.read().unwrap();
+        if let Some(name) = disassembled_functions_guard_body.get(&index) {
+            func_name = name.clone();
+        }
+    }
     write!(f, "{}(", func_name);
     if !args.is_empty() {
         f.write(&args[0]);
@@ -667,29 +704,6 @@ pub fn write_call(f: &mut fmt::CodeWriter, index: u32, args: &[Expr]) {
         }
     }
     f.write(")");
-
-    let mut disassembled_functions_guard = DISASSEMBLED_FUNCTIONS.write().unwrap();
-
-    if !disassembled_functions_guard.contains(&index) {
-        drop(disassembled_functions_guard);
-        let code = f.decompile_func(index, true, args).ok();
-        let code_string = match code {
-            Some(code) => {
-                f.string_func(&code[..], index)
-            },
-            None => String::new(),
-        };
-
-        let code_clean = f.clean_lines(&code_string);
-        let replaced_body = search_for_patterns(&code_clean);
-        if let Some(replaced_body_value) = replaced_body {
-            println!("{}", replaced_body_value);
-        } 
-        disassembled_functions_guard = DISASSEMBLED_FUNCTIONS.write().unwrap();
-        if !disassembled_functions_guard.contains(&index) {
-            disassembled_functions_guard.insert(index);
-        }
-    }
 }
 
 impl fmt::CodeDisplay for Expr {
