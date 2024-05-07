@@ -1,17 +1,17 @@
 use std::fmt::Formatter;
 use std::fmt::Display;
-use crate::ssa::Stmt;
-use regex::Regex;
-use crate::soroban::FunctionInfo;
-use std::collections::HashMap;
-
-use soroban_sdk::Val;
-
 use crate::fmt::{self, CodeDisplay};
-use crate::wasm_wrapper::wasm::TableElement;
-use crate::wasm_wrapper::wasm_adapter::{ValueType, self};
-
 use super::Var;
+use crate::soroban::search_for_patterns;
+use crate::soroban::FunctionInfo;
+use crate::wasm_wrapper::wasm::TableElement;
+use crate::wasm_wrapper::wasm_adapter::{self, ValueType};
+use lazy_static::lazy_static;
+use regex::Regex;
+use soroban_sdk::Val;
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::sync::RwLock;
 
 const DAY_IN_LEDGERS: u32 = 17280;
 const INSTANCE_BUMP_AMOUNT: u32 = 7 * DAY_IN_LEDGERS;
@@ -19,6 +19,13 @@ const INSTANCE_LIFETIME_THRESHOLD: u32 = INSTANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
 const BALANCE_BUMP_AMOUNT: u32 = 30 * DAY_IN_LEDGERS;
 const BALANCE_LIFETIME_THRESHOLD: u32 = BALANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
 
+lazy_static! {
+    pub static ref DISASSEMBLED_FUNCTIONS_INDEX: RwLock<HashSet<u32>> = RwLock::new(HashSet::new());
+}
+
+lazy_static! {
+    pub static ref DISASSEMBLED_FUNCTIONS: RwLock<HashMap<u32, String>> = RwLock::new(HashMap::new());
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Expr {
@@ -655,22 +662,49 @@ fn write_binop_func(f: &mut fmt::CodeWriter, name: &'static str, a: &Expr, b: &E
     f.write(")");
 }
 
-pub fn write_call(f: &mut fmt::CodeWriter, index: u32, args: &[Expr]) -> Option<Vec<Stmt>> {
-    let func = f.module().func(index);
-    if func.is_imported() {
-        write!(f, "{}(", func.name().to_string());
-        if !args.is_empty() {
-            f.write(&args[0]);
-            for arg in &args[1..] {
-                f.write(", ");
-                f.write(arg);
+pub fn write_call(f: &mut fmt::CodeWriter, index: u32, args: &[Expr]) {
+    let mut func_name = f.module().func(index).name().to_string();
+
+    let mut disassembled_functions_guard_index = DISASSEMBLED_FUNCTIONS_INDEX.write().unwrap();
+    if !disassembled_functions_guard_index.contains(&index) {
+        drop(disassembled_functions_guard_index); // Release the read lock
+
+        let patterns_vec = {
+            let code = f.decompile_func(index, true, args).ok();
+            let code_string = match code {
+                Some(code) => f.string_func(&code[..], index),
+                None => String::new(),
+            };
+
+            let code_clean = f.clean_lines(&code_string);
+            search_for_patterns(&code_clean)
+        };
+
+        if let Some(patterns) = patterns_vec {
+            let mut disassembled_functions_guard_body = DISASSEMBLED_FUNCTIONS.write().unwrap();
+
+            for (pattern_name, _body_code) in patterns {
+                disassembled_functions_guard_body.insert(index, pattern_name.clone());
+                func_name = pattern_name.clone();
             }
         }
-        f.write(")");
-        None
+        disassembled_functions_guard_index = DISASSEMBLED_FUNCTIONS_INDEX.write().unwrap();
+        disassembled_functions_guard_index.insert(index);
     } else {
-        f.decompile_func(index, true, args).ok()
+        let disassembled_functions_guard_body = DISASSEMBLED_FUNCTIONS.read().unwrap();
+        if let Some(name) = disassembled_functions_guard_body.get(&index) {
+            func_name = name.clone();
+        }
     }
+    write!(f, "{}(", func_name);
+    if !args.is_empty() {
+        f.write(&args[0]);
+        for arg in &args[1..] {
+            f.write(", ");
+            f.write(arg);
+        }
+    }
+    f.write(")");
 }
 
 impl Display for Expr {
@@ -692,11 +726,7 @@ impl fmt::CodeDisplay for Expr {
                 f.write(" : ");
                 write_paren(f, self, b);
             }
-            Expr::Call(index, args) => {
-                if let Some(code) = write_call(f, *index, args) {
-                    f.write_body(&code)
-                }
-            }
+            Expr::Call(index, args) => write_call(f, *index, args),
             Expr::CallIndirect(index, args, sig) => {
                 let mut targets = HashMap::new();
                 let wasm = f.wasm();
@@ -764,7 +794,7 @@ impl fmt::CodeDisplay for Expr {
                             let inputs = spec_args.inputs().get(var.index as usize);
                             if let Some(arg) = inputs {
                                 write!(f, "{}", arg.clone().name());
-                                return
+                                return;
                             }
                         }
                     }
@@ -773,7 +803,7 @@ impl fmt::CodeDisplay for Expr {
                     write!(f, "{}{}", "var_", ((var.index as u8) + b'a') as char);
                 };
             }
-            Expr::GetGlobal(index) => write!(f, "global_{}", (*index as u8 +b'a') as char),
+            Expr::GetGlobal(index) => write!(f, "global_{}", (*index as u8 + b'a') as char),
             Expr::I32Const(val) => write!(f, "{}", *val as i32),
             Expr::I64Const(val) => {
                 let value = *val;
@@ -784,8 +814,8 @@ impl fmt::CodeDisplay for Expr {
                     if let Some(captures) = re.captures(t.as_str()) {
                         if let Some(value) = captures.get(1) {
                             t = format!("{}", value.as_str());
-                        } 
-                    } 
+                        }
+                    }
                     if t == format!("{}", INSTANCE_LIFETIME_THRESHOLD) {
                         t = "INSTANCE_LIFETIME_THRESHOLD".to_string();
                     } else if t == format!("{}", BALANCE_BUMP_AMOUNT) {
@@ -796,11 +826,23 @@ impl fmt::CodeDisplay for Expr {
                         t = "INSTANCE_BUMP_AMOUNT".to_string();
                     } 
 
-                    write!(f, "{}", t)
+                    write!(
+                        f,
+                        "{}",
+                        if t == "True" {
+                            "1"
+                        } else if t == "False" {
+                            "0"
+                        } else if t == "Void" {
+                            "0"
+                        } else {
+                            &t
+                        }
+                    )
                 } else {
                     write!(f, "{}", *val as i64)
                 }
-            },
+            }
             Expr::F32Const(val) => write!(f, "{}", f32::from_bits(*val)),
             Expr::F64Const(val) => write!(f, "{}", f64::from_bits(*val)),
 
@@ -810,14 +852,14 @@ impl fmt::CodeDisplay for Expr {
             }
             Expr::I32Eq(a, b) => write_binop(f, " == ", self, a, b),
             Expr::I32Ne(a, b) => write_binop(f, " != ", self, a, b),
-            Expr::I32LtS(a, b) => write_binop(f, " <s ", self, a, b),
-            Expr::I32LtU(a, b) => write_binop(f, " <u ", self, a, b),
-            Expr::I32GtS(a, b) => write_binop(f, " >s ", self, a, b),
-            Expr::I32GtU(a, b) => write_binop(f, " >u ", self, a, b),
-            Expr::I32LeS(a, b) => write_binop(f, " <=s ", self, a, b),
-            Expr::I32LeU(a, b) => write_binop(f, " <=u ", self, a, b),
-            Expr::I32GeS(a, b) => write_binop(f, " >=s ", self, a, b),
-            Expr::I32GeU(a, b) => write_binop(f, " >=u ", self, a, b),
+            Expr::I32LtS(a, b) => write_binop(f, " < ", self, a, b),
+            Expr::I32LtU(a, b) => write_binop(f, " < ", self, a, b),
+            Expr::I32GtS(a, b) => write_binop(f, " > ", self, a, b),
+            Expr::I32GtU(a, b) => write_binop(f, " > ", self, a, b),
+            Expr::I32LeS(a, b) => write_binop(f, " <= ", self, a, b),
+            Expr::I32LeU(a, b) => write_binop(f, " <= ", self, a, b),
+            Expr::I32GeS(a, b) => write_binop(f, " >= ", self, a, b),
+            Expr::I32GeU(a, b) => write_binop(f, " >= ", self, a, b),
 
             Expr::I64Eqz(arg) => {
                 write_paren(f, self, arg);
@@ -825,14 +867,14 @@ impl fmt::CodeDisplay for Expr {
             }
             Expr::I64Eq(a, b) => write_binop(f, " == ", self, a, b),
             Expr::I64Ne(a, b) => write_binop(f, " != ", self, a, b),
-            Expr::I64LtS(a, b) => write_binop(f, " <s ", self, a, b),
-            Expr::I64LtU(a, b) => write_binop(f, " <u ", self, a, b),
-            Expr::I64GtS(a, b) => write_binop(f, " >s ", self, a, b),
-            Expr::I64GtU(a, b) => write_binop(f, " >u ", self, a, b),
-            Expr::I64LeS(a, b) => write_binop(f, " <=s ", self, a, b),
-            Expr::I64LeU(a, b) => write_binop(f, " <=u ", self, a, b),
-            Expr::I64GeS(a, b) => write_binop(f, " >=s ", self, a, b),
-            Expr::I64GeU(a, b) => write_binop(f, " >=u ", self, a, b),
+            Expr::I64LtS(a, b) => write_binop(f, " < ", self, a, b),
+            Expr::I64LtU(a, b) => write_binop(f, " < ", self, a, b),
+            Expr::I64GtS(a, b) => write_binop(f, " > ", self, a, b),
+            Expr::I64GtU(a, b) => write_binop(f, " > ", self, a, b),
+            Expr::I64LeS(a, b) => write_binop(f, " <= ", self, a, b),
+            Expr::I64LeU(a, b) => write_binop(f, " <= ", self, a, b),
+            Expr::I64GeS(a, b) => write_binop(f, " >= ", self, a, b),
+            Expr::I64GeU(a, b) => write_binop(f, " >= ", self, a, b),
 
             Expr::F32Eq(a, b) => write_binop(f, " == ", self, a, b),
             Expr::F32Ne(a, b) => write_binop(f, " != ", self, a, b),
@@ -875,8 +917,8 @@ impl fmt::CodeDisplay for Expr {
             Expr::I32Or(a, b) => write_binop(f, " | ", self, a, b),
             Expr::I32Xor(a, b) => write_binop(f, " ^ ", self, a, b),
             Expr::I32Shl(a, b) => write_binop(f, " << ", self, a, b),
-            Expr::I32ShrS(a, b) => write_binop(f, " >>s ", self, a, b),
-            Expr::I32ShrU(a, b) => write_binop(f, " >>u ", self, a, b),
+            Expr::I32ShrS(a, b) => write_binop(f, " >> ", self, a, b),
+            Expr::I32ShrU(a, b) => write_binop(f, " >> ", self, a, b),
             Expr::I32Rotl(a, b) => write_binop_func(f, "rotl", a, b),
             Expr::I32Rotr(a, b) => write_binop_func(f, "rotr", a, b),
 
@@ -907,8 +949,8 @@ impl fmt::CodeDisplay for Expr {
             Expr::I64Or(a, b) => write_binop(f, " | ", self, a, b),
             Expr::I64Xor(a, b) => write_binop(f, " ^ ", self, a, b),
             Expr::I64Shl(a, b) => write_binop(f, " << ", self, a, b),
-            Expr::I64ShrS(a, b) => write_binop(f, " >>s ", self, a, b),
-            Expr::I64ShrU(a, b) => write_binop(f, " >>u ", self, a, b),
+            Expr::I64ShrS(a, b) => write_binop(f, " >> ", self, a, b),
+            Expr::I64ShrU(a, b) => write_binop(f, " >> ", self, a, b),
             Expr::I64Rotl(a, b) => write_binop_func(f, "rotl", a, b),
             Expr::I64Rotr(a, b) => write_binop_func(f, "rotr", a, b),
 

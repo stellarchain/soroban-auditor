@@ -6,12 +6,10 @@ use std::io::Read;
 use std::{fs::File, io::BufReader};
 use tlsh_fixed::{BucketKind, ChecksumKind, Tlsh, TlshBuilder, TlshError, Version};
 
-#[derive(Debug, Deserialize)]
-struct Pattern {
+#[derive(Debug, Deserialize, Eq, Clone, Hash, PartialEq)]
+pub struct Pattern {
     name: String,
-    hash: String,
-    prefix_pattern: String,
-    suffix_pattern: String,
+    pattern: String,
     body_replace: String,
 }
 
@@ -20,61 +18,39 @@ struct PatternConfig {
     patterns: Vec<Pattern>,
 }
 
-enum ReplacementType {
-    Prefix,
-    Suffix,
-}
-
-pub fn search_for_patterns(function_body: &str) -> Option<String> {
+pub fn search_for_patterns(function_body: &str) -> Option<Vec<(String, String)>> {
+    let mut found_patterns = Vec::new();
     let mut function_replaced_patterns = function_body.to_string();
+    let cleaned_function_body = function_body.replace(" ", "").replace("\n", "");
     match load_patterns_hash_map() {
         Ok(pattern_config) => {
-            for pattern in pattern_config.patterns {
-                match (
-                    get_lcs_pattern(&function_replaced_patterns, &pattern.prefix_pattern),
-                    get_lcs_pattern(&function_replaced_patterns, &pattern.suffix_pattern),
-                ) {
-                    (Ok(prefix_common_sequence), Ok(suffix_common_sequence)) => {
-                        match (
-                            get_sequence_tlsh(&prefix_common_sequence),
-                            get_sequence_tlsh(&suffix_common_sequence),
-                        ) {
-                            (Ok(prefix_tlsh), Ok(suffix_tlsh)) => {
-                                match (
-                                    get_sequence_tlsh(&pattern.prefix_pattern),
-                                    get_sequence_tlsh(&pattern.suffix_pattern),
-                                ) {
-                                    (Ok(pattern_prefix_tlsh), Ok(pattern_suffix_tlsh)) => {
-                                        let prefix_diff = pattern_prefix_tlsh.diff(&prefix_tlsh, false);
-                                        let suffix_diff = pattern_suffix_tlsh.diff(&suffix_tlsh, false);
-                                        if prefix_diff < 30  && suffix_diff < 30 {
-                                             function_replaced_patterns =
-                                                replace_sequence(&pattern, &function_replaced_patterns)
-                                                    .unwrap_or(function_replaced_patterns);
-                                        }
-                                    }
-                                    (Err(err), _) => {
-                                        println!("Error loading prefix pattern: {}", err);
-                                    }
-                                    (_, Err(err)) => {
-                                        println!("Error loading suffix pattern: {}", err);
+            for pattern in &pattern_config.patterns {
+                let cleaned_pattern = &pattern.pattern.replace(" ", "").replace("\n", "");
+                if let Ok(common_sequence) = get_lcs_pattern(&cleaned_function_body, &cleaned_pattern) {
+                    match get_sequence_tlsh(&common_sequence) {
+                        Ok(tlsh_sequence) => match get_sequence_tlsh(&cleaned_pattern) {
+                            Ok(pattern_tlsh) => {
+                                let diff = pattern_tlsh.diff(&tlsh_sequence, false);
+                                if diff < 50 {
+                                    if let Some(replaced) = replace_sequence(&pattern, &function_replaced_patterns) {
+                                        function_replaced_patterns = replaced;
+                                        found_patterns.push((pattern.name.clone(), function_replaced_patterns.clone()));
+                                        return Some(found_patterns);
                                     }
                                 }
                             }
-                            (Err(err), _) => {
-                                println!("Error loading prefix pattern: {}", err);
-                            }
-                            (_, Err(err)) => {
-                                println!("Error loading suffix pattern: {}", err);
-                            }
-                        }
+                            Err(_) => {},
+                        },
+                        Err(_) => {},
                     }
-                    _ => {
-                        println!("Error loading patterns 3");
-                    }
+                } else {
+                    println!("Error loading pattern for {}", pattern.name);
                 }
             }
-            Some(function_replaced_patterns)
+            if found_patterns.len() > 0 {
+                return Some(found_patterns);
+            }
+            None
         }
         Err(err) => {
             println!("Error loading patterns: {}", err);
@@ -83,8 +59,41 @@ pub fn search_for_patterns(function_body: &str) -> Option<String> {
     }
 }
 
+fn calculate_pattern_score(function_body: &str, pattern: &Pattern) -> usize {
+    let prefix_score = calculate_score_for_pattern(&function_body, &pattern.pattern);
+    let suffix_score = calculate_score_for_pattern(&function_body, &pattern.pattern);
+
+    match prefix_score.checked_add(suffix_score) {
+        Some(score) => score,
+        None => {
+            println!("Overflow occurred while calculating pattern score.");
+            std::usize::MAX // Return a large value to indicate overflow
+        }
+    }
+}
+
+fn calculate_score_for_pattern(function_body: &str, pattern: &str) -> usize {
+    let pattern_length = pattern.len();
+    if pattern_length > function_body.len() {
+        return std::usize::MAX;
+    }
+    let mut min_distance = std::usize::MAX;
+    for i in 0..=function_body.len() - pattern_length {
+        let window = &function_body[i..i + pattern_length];
+        let distance = levenshtein(window, pattern);
+
+        if distance < min_distance {
+            min_distance = distance;
+            if distance == 0 {
+                break;
+            }
+        }
+    }
+    min_distance
+}
+
 fn load_patterns_hash_map() -> Result<PatternConfig, Box<dyn std::error::Error>> {
-    let file = File::open("patterns.toml")?;
+    let file = File::open("src/soroban/patterns/sac_contract.toml")?;
     let mut reader = BufReader::new(file);
     let mut content = String::new();
     reader.read_to_string(&mut content)?;
@@ -110,33 +119,36 @@ pub fn get_lcs_pattern(function_body: &str, pattern: &str) -> Result<String, Box
     Ok(formatted)
 }
 
-fn replace_sequence(pattern: &Pattern, body: &str) -> Option<String> {
-    match find_best_match(body, &pattern.prefix_pattern, &pattern.suffix_pattern) {
-        (Some(prefix_found_index), Some(suffix_found_index)) => {
-            let prefix = &body[..prefix_found_index];
-            let suffix = &body[suffix_found_index + pattern.suffix_pattern.as_str().len()..];
-            let replaced_body = format!("{}{}", prefix, pattern.body_replace);
-            Some(format!("{}{}", replaced_body, suffix))
-        }
-        _ => None,
-    }
+pub fn replace_sequence(pattern: &Pattern, body: &str) -> Option<String> {
+    let prefix_position = find_pattern_position(body, &pattern.pattern)?;
+    let replaced = format!("{}{}", &body[..prefix_position], &pattern.body_replace);
+    Some(replaced)
 }
 
-fn find_best_match(body: &str, prefix_pattern: &str, suffix_pattern: &str) -> (Option<usize>, Option<usize>) {
-    let mut min_distance = std::usize::MAX;
-    let mut found_index_prefix = None;
-    let mut found_index_suffix = None;
+pub fn find_pattern_position(body: &str, pattern: &str) -> Option<usize> {
+    let pattern_length = pattern.len();
+    let body_length = body.len();
 
-    for i in 0..(body.len() - (prefix_pattern.len() + suffix_pattern.len())) {
-        let window = &body[i..i + prefix_pattern.len() + suffix_pattern.len()];
-        let distance = levenshtein(window, prefix_pattern) + levenshtein(&window[prefix_pattern.len() ..], suffix_pattern);
+    let mut min_distance = std::usize::MAX;
+    let mut found_index = None;
+
+    for i in 0..=body_length {
+        let window = if i + pattern_length <= body_length {
+            &body[i..i + pattern_length]
+        } else {
+            &body[i..] 
+        };
+
+        let distance = levenshtein(window, pattern);
 
         if distance < min_distance {
             min_distance = distance;
-            found_index_prefix = Some(i);
-            found_index_suffix = Some(i + prefix_pattern.len());
+            found_index = Some(i);
+            if distance == 0 {
+                break; // Exact match found, no need to search further
+            }
         }
     }
 
-    (found_index_prefix, found_index_suffix)
+    found_index
 }
