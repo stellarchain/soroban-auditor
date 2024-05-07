@@ -148,7 +148,6 @@ impl CodeWriter {
 
         let (_decls, code) = structuring::structure(cfg);
         let mut printer = CodeWriter::printer(self.wasm.clone(), func_index);
-        printer.write_func(&code, func_index);
         Ok(code)
     }
 
