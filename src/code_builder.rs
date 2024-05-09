@@ -1,15 +1,15 @@
-use expr_builder::ExprBuilder;
-use parity_wasm::elements::{BlockType, Opcode, Type, TypeSection};
-use reorder_analysis::can_local_be_reordered;
+use crate::expr_builder::ExprBuilder;
+use parity_wasm::elements::{BlockType, Instruction, Type, TypeSection};
+use crate::reorder_analysis::can_local_be_reordered;
 use std::collections::BTreeMap;
 use std::io::Write;
-use {call_indirect_name, precedence, to_rs_type, BlockKind, Function, Global, Indentation};
+use crate::{call_indirect_name, precedence, to_rs_type, BlockKind, Function, Global, Indentation};
 
-fn is_breakable_if(remaining_ops: &[Opcode]) -> bool {
+fn is_breakable_if(remaining_ops: &[Instruction]) -> bool {
     let mut stack = 0;
 
     for opcode in remaining_ops {
-        use parity_wasm::elements::Opcode::*;
+        use parity_wasm::elements::Instruction::*;
         match *opcode {
             Block(_) | If(_) | Loop(_) => {
                 stack += 1;
@@ -25,8 +25,8 @@ fn is_breakable_if(remaining_ops: &[Opcode]) -> bool {
                     return true;
                 }
             }
-            BrTable(ref table, default_depth) => {
-                if table.iter().any(|&i| i == stack) || default_depth == stack {
+            BrTable(ref table) => {
+                if table.table.iter().any(|&i| i == stack) || table.default == stack {
                     return true;
                 }
             }
@@ -46,7 +46,7 @@ pub fn build<W: Write>(
     indirect_fns: &mut BTreeMap<u32, Vec<(u32, u32)>>,
     globals: &[Global],
     types: &TypeSection,
-    code: &[Opcode],
+    code: &[Instruction],
     base_indentation: usize,
 ) {
     let mut expr_builder = ExprBuilder::new();
@@ -63,7 +63,7 @@ pub fn build<W: Write>(
         //     "{}// opcode: {:?} stack: {:?} block types: {:?}",
         //     indentation, opcode, expr_builder, blocks
         // ).unwrap();
-        use parity_wasm::elements::Opcode::*;
+        use parity_wasm::elements::Instruction::*;
         match *opcode {
             Unreachable => {
                 writeln!(writer, "{}unreachable!();", indentation).unwrap();
@@ -317,12 +317,12 @@ pub fn build<W: Write>(
 
                 writeln!(writer, "{}}}", indentation).unwrap();
             }
-            BrTable(ref table, default_depth) => {
+            BrTable(ref table) => {
                 let (_, expr) = expr_builder.pop().unwrap();
                 // TODO Branch with value
                 writeln!(writer, "{}match {} {{", indentation, expr).unwrap();
                 indentation.0 += 1;
-                for (index, &relative_depth) in table.iter().enumerate() {
+                for (index, &relative_depth) in table.table.iter().enumerate() {
                     let block = blocks
                         .iter()
                         .rev()
@@ -350,7 +350,7 @@ pub fn build<W: Write>(
                 let block = blocks
                     .iter()
                     .rev()
-                    .nth(default_depth as usize)
+                    .nth(table.default as usize)
                     .expect("Branch Index out of Bounds");
 
                 match *block {
@@ -381,8 +381,9 @@ pub fn build<W: Write>(
                 let fn_type = function.ty;
                 let real_name = function.real_name;
                 write!(writer, "{}", indentation).unwrap();
-                if fn_type.return_type().is_some() {
+                for result in fn_type.results() {
                     write!(writer, "let var{} = ", expr_index).unwrap();
+                    expr_index += 1;
                 }
                 let is_imported = (fn_index as usize) < import_count;
                 if is_imported {
@@ -405,7 +406,7 @@ pub fn build<W: Write>(
                 } else {
                     writeln!(writer, ");").unwrap();
                 }
-                if fn_type.return_type().is_some() {
+                for result in fn_type.results() {
                     expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                     expr_index += 1;
                 }
@@ -415,8 +416,9 @@ pub fn build<W: Write>(
                 indirect_fns.entry(type_index).or_insert_with(Vec::new);
 
                 write!(writer, "{}", indentation).unwrap();
-                if fn_type.return_type().is_some() {
+                for result in fn_type.results() {
                     write!(writer, "let var{} = ", expr_index).unwrap();
+                    expr_index += 1;
                 }
                 let (_, fn_ptr) = expr_builder.pop().unwrap();
                 write!(
@@ -430,7 +432,7 @@ pub fn build<W: Write>(
                     write!(writer, ", {}", expr).unwrap();
                 }
                 writeln!(writer, ");").unwrap();
-                if fn_type.return_type().is_some() {
+                for result in fn_type.results() {
                     expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                     expr_index += 1;
                 }

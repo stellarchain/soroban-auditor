@@ -6,7 +6,7 @@ extern crate unidecode;
 
 use parity_wasm::deserialize_file;
 use parity_wasm::elements::{
-    External, FunctionType, ImportCountType, Internal, NameSection, Opcode, Section, Type,
+    External, FunctionType, ImportCountType, Instruction, Internal, NameSection, Section, Type,
     ValueType,
 };
 use std::collections::BTreeMap;
@@ -39,7 +39,8 @@ struct Opt {
     #[structopt(help = "Input file", parse(from_os_str))]
     input: PathBuf,
     #[structopt(
-        help = "Output file, stored next to wasm file if not specified", parse(from_os_str)
+        help = "Output file, stored next to wasm file if not specified",
+        parse(from_os_str)
     )]
     output: Option<PathBuf>,
 }
@@ -57,7 +58,7 @@ pub struct Global<'a> {
     is_pub: bool,
     name: String,
     ty: &'static str,
-    const_expr: &'a [Opcode],
+    const_expr: &'a [Instruction],
 }
 
 #[derive(Debug)]
@@ -149,13 +150,18 @@ fn call_indirect_name(f: &FunctionType) -> String {
             ValueType::F64 => "d",
         });
     }
-    s.push_str(match f.return_type() {
-        Some(ValueType::I32) => "_i",
-        Some(ValueType::I64) => "_l",
-        Some(ValueType::F32) => "_f",
-        Some(ValueType::F64) => "_d",
-        None => "_v",
-    });
+    for result in f.results() {
+        s.push_str(match result {
+            ValueType::I32 => "_i",
+            ValueType::I64 => "_l",
+            ValueType::F32 => "_f",
+            ValueType::F64 => "_d",
+        });
+    }
+
+    if f.results().is_empty() {
+        s.push_str("_v");
+    }
     s
 }
 
@@ -174,11 +180,13 @@ fn main() {
     let fns = module.function_section().unwrap();
     let types = module.type_section().unwrap();
     let exports = module.export_section().unwrap();
+    //name sections
+    //
     let function_names = module
         .sections()
         .iter()
-        .filter_map(|s| match *s {
-            Section::Name(NameSection::Function(ref s)) => Some(s),
+        .filter_map(|s| match s {
+            Section::Name(name_section) => name_section.functions(),
             _ => None,
         })
         .next();
@@ -241,20 +249,22 @@ pub const PAGE_SIZE: usize = 64 << 10;
 
 pub trait Imports {{
     type Memory: Memory;"
-    ).unwrap();
+    )
+    .unwrap();
 
     for function in &functions[..import_count] {
         write!(
             writer,
             "    fn {}(&mut self, context: &mut Context<Self::Memory>",
             function.name
-        ).unwrap();
+        )
+        .unwrap();
         for (i, &param) in function.ty.params().iter().enumerate() {
             write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
         }
-        write!(writer, ")").unwrap();
-        if let Some(ret_ty) = function.ty.return_type() {
-            write!(writer, " -> {}", to_rs_type(ret_ty)).unwrap();
+        write!(writer, ") ->").unwrap();
+        for result in function.ty.results() {
+            write!(writer, " {}", to_rs_type(*result)).unwrap();
         }
         writeln!(writer, ";").unwrap();
     }
@@ -313,7 +323,8 @@ pub trait Imports {{
             writer,
             "    fn {}(&mut self, context: &mut Context<Self::Memory>) -> &mut {};",
             global.name, global.ty
-        ).unwrap();
+        )
+        .unwrap();
         // } else {
         //     writeln!(writer, "    const {}: {};", global.name, global.ty);
         // }
@@ -348,7 +359,8 @@ pub struct Instance<I: Imports<Memory = M>, M: Memory> {
 
 pub struct Context<M: Memory> {
     pub memory: M,"#
-    ).unwrap();
+    )
+    .unwrap();
 
     for global in &globals[imported_globals_count..] {
         if global.is_mutable {
@@ -362,7 +374,7 @@ pub struct Context<M: Memory> {
 
     let mut has_dynamic_element_section_offset = false;
     if let Some(entry) = module.elements_section().and_then(|e| e.entries().get(0)) {
-        let const_expr = entry.offset().code();
+        let const_expr = entry.offset().as_ref().unwrap().code();
         if is_const_expr_immutable_instead_of_const(const_expr) {
             writeln!(writer, "    element_section_offset: i32,").unwrap();
             has_dynamic_element_section_offset = true;
@@ -379,7 +391,8 @@ pub struct Context<M: Memory> {
             r#"}
 
 pub mod consts {"#
-        ).unwrap();
+        )
+        .unwrap();
 
         for global in &globals[imported_globals_count..] {
             if !global.is_mutable {
@@ -409,7 +422,8 @@ pub mod consts {"#
 
 impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
     pub fn new(imports: I, mut memory: M) -> Self {"#
-    ).unwrap();
+    )
+    .unwrap();
 
     if let Some(memory) = module.memory_section().and_then(|m| m.entries().first()) {
         writeln!(
@@ -420,7 +434,8 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
             assert_eq!(memory.size(), {0}, "Not enough memory pages allocated");
         }}"#,
             memory.limits().initial()
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     writeln!(
@@ -430,7 +445,8 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
             imports,
             context: Context {
                 memory,"#
-    ).unwrap();
+    )
+    .unwrap();
 
     for global in &globals[imported_globals_count..] {
         if global.is_mutable {
@@ -461,7 +477,8 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
         "{}",
         r#"            },
         };"#
-    ).unwrap();
+    )
+    .unwrap();
 
     for global in &globals[imported_globals_count..] {
         if global.is_mutable && is_const_expr_immutable_instead_of_const(global.const_expr) {
@@ -482,7 +499,7 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
     let mut indirect_fns = BTreeMap::new();
 
     if let Some(entry) = module.elements_section().and_then(|e| e.entries().get(0)) {
-        let const_expr = entry.offset().code();
+        let const_expr = entry.offset().as_ref().unwrap().code();
         let offset = if has_dynamic_element_section_offset {
             write!(writer, "        instance.context.element_section_offset = ").unwrap();
             write_const_expr(
@@ -499,7 +516,7 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
         } else {
             assert!(const_expr.len() == 2);
             match const_expr[0] {
-                Opcode::I32Const(c) => c,
+                Instruction::I32Const(c) => c,
                 _ => panic!("Unexpected Element Section Offset {:#?}", const_expr),
             }
         };
@@ -514,9 +531,9 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
 
     if let Some(data_section) = module.data_section() {
         for entry in data_section.entries() {
-            let offset = entry.offset().code();
+            let offset = entry.offset().as_ref().unwrap().code();
             assert!(offset.len() == 2);
-            if let Opcode::I32Const(c) = offset[0] {
+            if let Instruction::I32Const(c) = offset[0] {
                 if entry.value().windows(2).all(|a| a[0] == a[1]) {
                     writeln!(
                         writer,
@@ -524,13 +541,15 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
                         c,
                         entry.value().first().cloned().unwrap_or_default(),
                         entry.value().len()
-                    ).unwrap();
+                    )
+                    .unwrap();
                 } else {
                     write!(
                         writer,
                         r#"        instance.context.memory.store_slice({}, b""#,
                         c
-                    ).unwrap();
+                    )
+                    .unwrap();
                     for &b in entry.value() {
                         match b {
                             b'\0' => write!(writer, r#"\0"#).unwrap(),
@@ -539,7 +558,7 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
                             b'\r' => write!(writer, r#"\r"#).unwrap(),
                             b'\n' => write!(writer, r#"\n"#).unwrap(),
                             b'\t' => write!(writer, r#"\t"#).unwrap(),
-                            0x00...0x7F => {
+                            0x00..=0x7F => {
                                 write!(writer, "{}", std::char::from_u32(b as _).unwrap()).unwrap()
                             }
                             _ => write!(writer, r#"\x{:X}"#, b).unwrap(),
@@ -559,7 +578,8 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
             writer,
             "        instance.context.{}(&mut instance.imports);",
             name
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     writeln!(
@@ -567,7 +587,8 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
         "{}",
         r#"        instance
     }"#
-    ).unwrap();
+    )
+    .unwrap();
 
     for export in exports.entries() {
         if let &Internal::Function(fn_index) = export.internal() {
@@ -576,20 +597,22 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
                 writer,
                 "    pub fn {}(&mut self",
                 mangle_fn_name(export.field())
-            ).unwrap();
+            )
+            .unwrap();
             for (i, &param) in function.ty.params().iter().enumerate() {
                 write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
             }
             write!(writer, ")").unwrap();
-            if let Some(ret_ty) = function.ty.return_type() {
-                write!(writer, " -> {}", to_rs_type(ret_ty)).unwrap();
+            if let Some(ret_ty) = function.ty.results().first() {
+                write!(writer, " -> {}", to_rs_type(*ret_ty)).unwrap();
             }
             writeln!(writer, " {{").unwrap();
             write!(
                 writer,
                 "        self.context.{}(&mut self.imports",
                 function.name
-            ).unwrap();
+            )
+            .unwrap();
             for (i, _) in function.ty.params().iter().enumerate() {
                 write!(writer, ", var{}", i).unwrap();
             }
@@ -608,15 +631,16 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
                 write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
             }
             write!(writer, ")").unwrap();
-            if let Some(ret_ty) = fn_type.return_type() {
-                write!(writer, " -> {}", to_rs_type(ret_ty)).unwrap();
+            if let Some(ret_ty) = fn_type.results().first() {
+                write!(writer, " -> {}", to_rs_type(*ret_ty)).unwrap();
             }
             write!(
                 writer,
                 " {{
         self.context.{}(&mut self.imports, ptr",
                 fn_name
-            ).unwrap();
+            )
+            .unwrap();
             for (i, _) in fn_type.params().iter().enumerate() {
                 write!(writer, ", var{}", i).unwrap();
             }
@@ -624,7 +648,8 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
                 writer,
                 r#")
     }}"#
-            ).unwrap();
+            )
+            .unwrap();
         }
     }
 
@@ -634,7 +659,8 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
         r#"}
 
 impl<M: Memory> Context<M> {"#
-    ).unwrap();
+    )
+    .unwrap();
 
     for export in exports.entries() {
         if let &Internal::Function(fn_index) = export.internal() {
@@ -647,13 +673,14 @@ impl<M: Memory> Context<M> {"#
                 writer,
                 "    pub fn {}<I: Imports<Memory = M>>(&mut self, imports: &mut I",
                 mangle_fn_name(export.field())
-            ).unwrap();
+            )
+            .unwrap();
             for (i, &param) in function.ty.params().iter().enumerate() {
                 write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
             }
             write!(writer, ")").unwrap();
-            if let Some(ret_ty) = function.ty.return_type() {
-                write!(writer, " -> {}", to_rs_type(ret_ty)).unwrap();
+            if let Some(ret_ty) = function.ty.results().first() {
+                write!(writer, " -> {}", to_rs_type(*ret_ty)).unwrap();
             }
             writeln!(writer, " {{").unwrap();
             write!(writer, "        self.{}(imports", function.name).unwrap();
@@ -685,13 +712,14 @@ impl<M: Memory> Context<M> {"#
             writer,
             "fn {}<I: Imports<Memory = M>>(&mut self, imports: &mut I",
             function.name
-        ).unwrap();
+        )
+        .unwrap();
         for (i, &param) in fn_type.params().iter().enumerate() {
             write!(writer, ", mut var{}: {}", i, to_rs_type(param)).unwrap();
         }
         write!(writer, ")").unwrap();
-        if let Some(ret_ty) = fn_type.return_type() {
-            write!(writer, " -> {}", to_rs_type(ret_ty)).unwrap();
+        if let Some(ret_ty) = fn_type.results().first() {
+            write!(writer, " -> {}", to_rs_type(*ret_ty)).unwrap();
         }
         writeln!(writer, " {{").unwrap();
 
@@ -704,7 +732,8 @@ impl<M: Memory> Context<M> {"#
                     writer,
                     "        let mut var{}: {} = 0{};",
                     expr_index, ty, decimals
-                ).unwrap();
+                )
+                .unwrap();
                 expr_index += 1;
             }
         }
@@ -712,7 +741,7 @@ impl<M: Memory> Context<M> {"#
         code_builder::build(
             &mut writer,
             expr_index,
-            fn_type.return_type().is_some(),
+            fn_type.results().first().is_some(),
             import_count,
             imported_globals_count,
             &functions,
@@ -734,20 +763,22 @@ impl<M: Memory> Context<M> {"#
             writer,
             "fn {}<I: Imports<Memory = M>>",
             call_indirect_name(fn_type),
-        ).unwrap();
+        )
+        .unwrap();
         write!(writer, "(&mut self, imports: &mut I, ptr: i32").unwrap();
         for (i, &param) in fn_type.params().iter().enumerate() {
             write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
         }
         write!(writer, ")").unwrap();
-        if let Some(ret_ty) = fn_type.return_type() {
-            write!(writer, " -> {}", to_rs_type(ret_ty)).unwrap();
+        if let Some(ret_ty) = fn_type.results().first() {
+            write!(writer, " -> {}", to_rs_type(*ret_ty)).unwrap();
         }
         write!(
             writer,
             " {{
         match ptr"
-        ).unwrap();
+        )
+        .unwrap();
         if has_dynamic_element_section_offset {
             write!(writer, " - self.element_section_offset").unwrap();
         }
@@ -781,7 +812,8 @@ impl<M: Memory> Context<M> {"#
             r#"            _ => panic!("Invalid Function Pointer"),
         }}
     }}"#
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     writeln!(writer, "}}").unwrap();
@@ -789,7 +821,7 @@ impl<M: Memory> Context<M> {"#
 
 fn write_const_expr<W: Write>(
     writer: &mut W,
-    opcodes: &[Opcode],
+    opcodes: &[Instruction],
     globals: &[Global],
     imported_globals_count: usize,
     consts_path: &str,
@@ -802,11 +834,11 @@ fn write_const_expr<W: Write>(
         opcodes
     );
     match opcodes[0] {
-        Opcode::I32Const(c) => write!(writer, "{}", c).unwrap(),
-        Opcode::I64Const(c) => write!(writer, "{}", c).unwrap(),
-        Opcode::F32Const(c) => write!(writer, "{}", c).unwrap(),
-        Opcode::F64Const(c) => write!(writer, "{}", c).unwrap(),
-        Opcode::GetGlobal(i) => {
+        Instruction::I32Const(c) => write!(writer, "{}", c).unwrap(),
+        Instruction::I64Const(c) => write!(writer, "{}", c).unwrap(),
+        Instruction::F32Const(c) => write!(writer, "{}", c).unwrap(),
+        Instruction::F64Const(c) => write!(writer, "{}", c).unwrap(),
+        Instruction::GetGlobal(i) => {
             let global = &globals[i as usize];
             let name = &global.name;
             if (i as usize) < imported_globals_count {
@@ -829,14 +861,14 @@ fn write_const_expr<W: Write>(
     }
 }
 
-fn is_const_expr_immutable_instead_of_const(opcodes: &[Opcode]) -> bool {
+fn is_const_expr_immutable_instead_of_const(opcodes: &[Instruction]) -> bool {
     assert!(
         opcodes.len() == 2,
         "Invalid Constant Expression {:#?}",
         opcodes
     );
     match opcodes[0] {
-        Opcode::I32Const(_) | Opcode::I64Const(_) | Opcode::F32Const(_) | Opcode::F64Const(_) => {
+        Instruction::I32Const(_) | Instruction::I64Const(_) | Instruction::F32Const(_) | Instruction::F64Const(_) => {
             false
         }
         _ => true, // This could actually be fully const, but it's hard to tell this early

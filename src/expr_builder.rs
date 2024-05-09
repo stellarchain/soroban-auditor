@@ -1,4 +1,4 @@
-use precedence;
+use crate::precedence;
 
 #[derive(Debug)]
 pub struct ExprBuilder {

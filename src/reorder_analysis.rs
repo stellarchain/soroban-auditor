@@ -1,15 +1,15 @@
 use parity_wasm::elements::{BlockType,
-                            Opcode::{self, *},
+                            Instruction::{self, *},
                             Type,
                             TypeSection};
-use {BlockKind, Function};
+use crate::{BlockKind, Function};
 
 pub fn can_local_be_reordered(
     local_to_load: u32,
     blocks: &[BlockKind],
     functions: &[Function],
     types: &TypeSection,
-    remaining_ops: &[Opcode],
+    remaining_ops: &[Instruction],
 ) -> bool {
     let mut position_on_stack = 0isize;
     let mut stack_frames = blocks
@@ -129,7 +129,7 @@ pub fn can_local_be_reordered(
                 }
 
                 // Return type
-                if fn_type.return_type().is_some() {
+                for _ in fn_type.results() {
                     position_on_stack += 1;
                 }
             }
@@ -149,7 +149,7 @@ pub fn can_local_be_reordered(
                 }
 
                 // Return type
-                if fn_type.return_type().is_some() {
+                for _ in fn_type.results() {
                     position_on_stack += 1;
                 }
             }

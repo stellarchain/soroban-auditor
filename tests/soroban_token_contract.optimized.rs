@@ -166,8 +166,8 @@ impl<M: Memory> Context<M> {
     }
     fn func16<I: Imports<Memory = M>>(&mut self, imports: &mut I, mut var0: i32, mut var1: i64, mut var2: i32, mut var3: i32) {
         let var4 = self.func17(imports, var0);
-        let var5 = imports._7(self, var4, var1, (var2 as u32 as i64).wrapping_shl(32i64 as u32) | 4i64, (var3 as u32 as i64).wrapping_shl(32i64 as u32) | 4i64);
-        var5;
+        let var6 = imports._7(self, var5, var1, (var2 as u32 as i64).wrapping_shl(32i64 as u32) | 4i64, (var3 as u32 as i64).wrapping_shl(32i64 as u32) | 4i64);
+        var7;
     }
     fn func17<I: Imports<Memory = M>>(&mut self, imports: &mut I, mut var0: i32) -> i64 {
         let mut var1: i32 = 0;
@@ -191,34 +191,34 @@ impl<M: Memory> Context<M> {
                             break;
                         }
                         let var6 = self.func18(imports, 1048729i32, 7i32);
-                        let var7 = self.memory.load64(var0 as usize + 8) as i64;
-                        let var8 = self.func19(imports, var6, var7);
-                        var4 = var8;
+                        let var8 = self.memory.load64(var0 as usize + 8) as i64;
+                        let var9 = self.func19(imports, var7, var8);
+                        var4 = var10;
                         break 'label0;
                         break;
                     }
-                    let var9 = self.func18(imports, 1048736i32, 5i32);
-                    let var10 = self.memory.load64(var0 as usize + 8) as i64;
-                    let var11 = self.func19(imports, var9, var10);
-                    var4 = var11;
+                    let var11 = self.func18(imports, 1048736i32, 5i32);
+                    let var13 = self.memory.load64(var0 as usize + 8) as i64;
+                    let var14 = self.func19(imports, var12, var13);
+                    var4 = var15;
                     break 'label0;
                     break;
                 }
-                let var12 = self.func18(imports, 1048741i32, 5i32);
-                self.memory.store64(var1 as usize, var12 as u64);
-                let var13 = self.func20(imports, var1, 1i32);
-                var4 = var13;
+                let var16 = self.func18(imports, 1048741i32, 5i32);
+                self.memory.store64(var1 as usize, var17 as u64);
+                let var18 = self.func20(imports, var1, 1i32);
+                var4 = var19;
                 break 'label0;
                 break;
             }
-            let var14 = self.func18(imports, 1048720i32, 9i32);
-            let var15 = self.memory.load64(var0.wrapping_add(16i32) as usize) as i64;
-            self.memory.store64(var1 as usize + 8, var15 as u64);
-            let var16 = self.memory.load64(var0 as usize + 8) as i64;
-            self.memory.store64(var1 as usize, var16 as u64);
-            let var17 = self.func21(imports, 1048664i32, 2i32, var1, 2i32);
-            let var18 = self.func19(imports, var14, var17);
-            var4 = var18;
+            let var20 = self.func18(imports, 1048720i32, 9i32);
+            let var22 = self.memory.load64(var0.wrapping_add(16i32) as usize) as i64;
+            self.memory.store64(var1 as usize + 8, var22 as u64);
+            let var23 = self.memory.load64(var0 as usize + 8) as i64;
+            self.memory.store64(var1 as usize, var23 as u64);
+            let var24 = self.func21(imports, 1048664i32, 2i32, var1, 2i32);
+            let var26 = self.func19(imports, var21, var25);
+            var4 = var27;
             break;
         }
         self.global0 = var1.wrapping_add(16i32);
@@ -272,7 +272,7 @@ impl<M: Memory> Context<M> {
             break;
         }
         let var9 = imports.j(self, (var0 as u32 as i64).wrapping_shl(32i64 as u32) | 4i64, (var1 as u32 as i64).wrapping_shl(32i64 as u32) | 4i64);
-        var9
+        var10
     }
     fn func19<I: Imports<Memory = M>>(&mut self, imports: &mut I, mut var0: i64, mut var1: i64) -> i64 {
         let mut var2: i32 = 0;
@@ -283,18 +283,18 @@ impl<M: Memory> Context<M> {
         self.memory.store64(var2 as usize, var0 as u64);
         let var4 = self.func20(imports, var2, 2i32);
         self.global0 = var2.wrapping_add(16i32);
-        var4
+        var5
     }
     fn func20<I: Imports<Memory = M>>(&mut self, imports: &mut I, mut var0: i32, mut var1: i32) -> i64 {
         let var2 = imports.g(self, (var0 as u32 as i64).wrapping_shl(32i64 as u32) | 4i64, (var1 as u32 as i64).wrapping_shl(32i64 as u32) | 4i64);
-        var2
+        var3
     }
     fn func21<I: Imports<Memory = M>>(&mut self, imports: &mut I, mut var0: i32, mut var1: i32, mut var2: i32, mut var3: i32) -> i64 {
         if (var1 != var3) as i32 != 0 {
             unreachable!();
         }
         let var4 = imports._9(self, (var0 as u32 as i64).wrapping_shl(32i64 as u32) | 4i64, (var2 as u32 as i64).wrapping_shl(32i64 as u32) | 4i64, (var1 as u32 as i64).wrapping_shl(32i64 as u32) | 4i64);
-        var4
+        var5
     }
     fn func22<I: Imports<Memory = M>>(&mut self, imports: &mut I) -> i64 {
         let mut var0: i32 = 0;
@@ -305,11 +305,11 @@ impl<M: Memory> Context<M> {
         self.memory.store64(var0 as usize + 8, 3i64 as u64);
         'label0: loop {
             let var3 = self.func17(imports, var0.wrapping_add(8i32));
-            var1 = var3;
-            let var4 = self.func23(imports, var1, 2i64);
-            if var4 != 0 {
-                let var5 = imports._1(self, var1, 2i64);
-                var1 = var5;
+            var1 = var4;
+            let var5 = self.func23(imports, var1, 2i64);
+            if var6 != 0 {
+                let var7 = imports._1(self, var1, 2i64);
+                var1 = var8;
                 if (var1 & 255i64 == 77i64) as i32 != 0 {
                     break 'label0;
                 }
@@ -323,7 +323,7 @@ impl<M: Memory> Context<M> {
     }
     fn func23<I: Imports<Memory = M>>(&mut self, imports: &mut I, mut var0: i64, mut var1: i64) -> i32 {
         let var2 = imports._0(self, var0, var1);
-        (var2 == 1i64) as i32
+        (var3 == 1i64) as i32
     }
     fn func24<I: Imports<Memory = M>>(&mut self, imports: &mut I, mut var0: i64) {
         let mut var1: i32 = 0;
@@ -332,8 +332,8 @@ impl<M: Memory> Context<M> {
         self.global0 = var1;
         self.memory.store64(var1 as usize + 8, 3i64 as u64);
         let var3 = self.func17(imports, var1.wrapping_add(8i32));
-        let var4 = imports.__(self, var3, var0, 2i64);
-        var4;
+        let var5 = imports.__(self, var4, var0, 2i64);
+        var6;
         self.global0 = var1.wrapping_add(32i32);
     }
     fn func25<I: Imports<Memory = M>>(&mut self, imports: &mut I, mut var0: i32, mut var1: i64, mut var2: i64) {
@@ -350,14 +350,14 @@ impl<M: Memory> Context<M> {
         'label0: loop {
             'label1: loop {
                 let var7 = self.func17(imports, var3);
-                var1 = var7;
-                let var8 = self.func23(imports, var1, 0i64);
-                if (var8 == 0) as i32 != 0 {
+                var1 = var8;
+                let var9 = self.func23(imports, var1, 0i64);
+                if (var10 == 0) as i32 != 0 {
                     var1 = 0i64;
                     break 'label1;
                 }
-                let var9 = imports._1(self, var1, 0i64);
-                var1 = var9;
+                let var11 = imports._1(self, var1, 0i64);
+                var1 = var12;
                 'label2: loop {
                     if (var4 != 16i32) as i32 != 0 {
                         self.memory.store64(var3.wrapping_add(24i32).wrapping_add(var4) as usize, 2i64 as u64);
@@ -370,24 +370,24 @@ impl<M: Memory> Context<M> {
                     break 'label0;
                 }
                 self.func26(imports, var1, 1048704i32, 2i32, var3.wrapping_add(24i32), 2i32);
-                let var10 = self.memory.load64(var3 as usize + 24) as i64;
-                self.func27(imports, var3.wrapping_add(40i32), var10);
-                let var11 = self.memory.load64(var3 as usize + 40) as i64;
-                if ((var11 == 0) as i32 == 0) as i32 != 0 {
+                let var13 = self.memory.load64(var3 as usize + 24) as i64;
+                self.func27(imports, var3.wrapping_add(40i32), var13);
+                let var14 = self.memory.load64(var3 as usize + 40) as i64;
+                if ((var14 == 0) as i32 == 0) as i32 != 0 {
                     break 'label0;
                 }
-                let var12 = self.memory.load64(var3 as usize + 32) as i64;
-                var1 = var12;
+                let var15 = self.memory.load64(var3 as usize + 32) as i64;
+                var1 = var15;
                 if (var1 & 255i64 != 4i64) as i32 != 0 {
                     break 'label0;
                 }
-                let var13 = self.memory.load64(var3 as usize + 48) as i64;
-                var2 = var13;
-                let var14 = self.memory.load64(var3.wrapping_add(56i32) as usize) as i64;
-                let var15 = self.func28(imports);
+                let var16 = self.memory.load64(var3 as usize + 48) as i64;
+                var2 = var16;
+                let var17 = self.memory.load64(var3.wrapping_add(56i32) as usize) as i64;
+                let var18 = self.func28(imports);
                 var4 = (var1 as u64).wrapping_shr(32i64 as u32) as i64 as i32;
-                var5 = (var15 as u32 > var4 as u32) as i32;
-                var1 = { let a = 0i64; let b = var14; if var5 != 0 { a } else { b } };
+                var5 = (var19 as u32 > var4 as u32) as i32;
+                var1 = { let a = 0i64; let b = var17; if var5 != 0 { a } else { b } };
                 var2 = { let a = 0i64; let b = var2; if var5 != 0 { a } else { b } };
                 break;
             }
@@ -405,7 +405,7 @@ impl<M: Memory> Context<M> {
             unreachable!();
         }
         let var5 = imports.a(self, var0, (var1 as u32 as i64).wrapping_shl(32i64 as u32) | 4i64, (var3 as u32 as i64).wrapping_shl(32i64 as u32) | 4i64, (var2 as u32 as i64).wrapping_shl(32i64 as u32) | 4i64);
-        var5;
+        var6;
     }
     fn func27<I: Imports<Memory = M>>(&mut self, imports: &mut I, mut var0: i32, mut var1: i64) {
         let mut var2: i32 = 0;
@@ -425,9 +425,9 @@ impl<M: Memory> Context<M> {
                     break 'label0;
                 }
                 let var5 = imports._8(self, var1);
-                var3 = var5;
-                let var6 = imports._7(self, var1);
-                var1 = var6;
+                var3 = var6;
+                let var7 = imports._7(self, var1);
+                var1 = var8;
                 self.memory.store64(var0.wrapping_add(16i32) as usize, var3 as u64);
                 self.memory.store64(var0 as usize + 8, var1 as u64);
                 break;
@@ -439,7 +439,7 @@ impl<M: Memory> Context<M> {
     }
     fn func28<I: Imports<Memory = M>>(&mut self, imports: &mut I) -> i32 {
         let var0 = imports._3(self);
-        (var0 as u64).wrapping_shr(32i64 as u32) as i64 as i32
+        (var1 as u64).wrapping_shr(32i64 as u32) as i64 as i32
     }
     fn func29<I: Imports<Memory = M>>(&mut self, imports: &mut I, mut var0: i64, mut var1: i64, mut var2: i64, mut var3: i64, mut var4: i32) {
         let mut var5: i32 = 0;
@@ -453,7 +453,7 @@ impl<M: Memory> Context<M> {
                 break 'label0;
             }
             let var8 = self.func28(imports);
-            if (var8 as u32 <= var4 as u32) as i32 != 0 {
+            if (var9 as u32 <= var4 as u32) as i32 != 0 {
                 break 'label0;
             }
             unreachable!();
@@ -465,17 +465,17 @@ impl<M: Memory> Context<M> {
         self.memory.store64(var5.wrapping_add(56i32) as usize, var1 as u64);
         self.memory.store64(var5 as usize + 48, var0 as u64);
         self.memory.store64(var5 as usize + 40, 0i64 as u64);
-        let var9 = self.func17(imports, var5.wrapping_add(40i32));
+        let var10 = self.func17(imports, var5.wrapping_add(40i32));
         self.func30(imports, var5, var2, var3);
         self.memory.store64(var5 as usize + 72, ((var4 as u32 as i64).wrapping_shl(32i64 as u32) | 4i64) as u64);
-        let var10 = self.memory.load64(var5 as usize + 8) as i64;
-        self.memory.store64(var5 as usize + 64, var10 as u64);
-        let var11 = self.func21(imports, 1048704i32, 2i32, var5.wrapping_sub(-64i32), 2i32);
-        let var12 = imports.__(self, var9, var11, 0i64);
-        var12;
+        let var12 = self.memory.load64(var5 as usize + 8) as i64;
+        self.memory.store64(var5 as usize + 64, var12 as u64);
+        let var13 = self.func21(imports, 1048704i32, 2i32, var5.wrapping_sub(-64i32), 2i32);
+        let var15 = imports.__(self, var11, var14, 0i64);
+        var16;
         if var6 != 0 {
-            let var13 = self.func28(imports);
-            var6 = var13;
+            let var17 = self.func28(imports);
+            var6 = var18;
             if (var6 as u32 > var4 as u32) as i32 != 0 {
                 unreachable!();
             }
@@ -488,7 +488,7 @@ impl<M: Memory> Context<M> {
         let var3: i64;
         if (var2 ^ var1.wrapping_shr(63i64 as u32) != 0i64) as i32 | (var1.wrapping_sub(-36028797018963968i64) as u64 > 72057594037927935i64 as u64) as i32 != 0 {
             let var4 = imports._6(self, var2, var1);
-            var3 = var4;
+            var3 = var5;
         } else {
             var3 = var1.wrapping_shl(8i64 as u32) | 11i64;
         }
@@ -507,19 +507,19 @@ impl<M: Memory> Context<M> {
         var1 = 0i64;
         'label0: loop {
             let var6 = self.func17(imports, var2);
-            var3 = var6;
-            let var7 = self.func23(imports, var3, 1i64);
-            if var7 != 0 {
-                let var8 = imports._1(self, var3, 1i64);
-                self.func27(imports, var2.wrapping_add(24i32), var8);
-                let var9 = self.memory.load64(var2 as usize + 24) as i64;
-                if ((var9 == 0) as i32 == 0) as i32 != 0 {
+            var3 = var7;
+            let var8 = self.func23(imports, var3, 1i64);
+            if var9 != 0 {
+                let var10 = imports._1(self, var3, 1i64);
+                self.func27(imports, var2.wrapping_add(24i32), var11);
+                let var12 = self.memory.load64(var2 as usize + 24) as i64;
+                if ((var12 == 0) as i32 == 0) as i32 != 0 {
                     break 'label0;
                 }
-                let var10 = self.memory.load64(var2.wrapping_add(40i32) as usize) as i64;
-                var4 = var10;
-                let var11 = self.memory.load64(var2 as usize + 32) as i64;
-                var1 = var11;
+                let var13 = self.memory.load64(var2.wrapping_add(40i32) as usize) as i64;
+                var4 = var13;
+                let var14 = self.memory.load64(var2 as usize + 32) as i64;
+                var1 = var14;
                 self.func15(imports, var2);
             }
             self.memory.store64(var0 as usize + 8, var4 as u64);
@@ -541,9 +541,9 @@ impl<M: Memory> Context<M> {
         var4 = var3.wrapping_add(24i32);
         let var6 = self.func17(imports, var4);
         self.func30(imports, var3.wrapping_add(8i32), var1, var2);
-        let var7 = self.memory.load64(var3 as usize + 16) as i64;
-        let var8 = imports.__(self, var6, var7, 1i64);
-        var8;
+        let var8 = self.memory.load64(var3 as usize + 16) as i64;
+        let var9 = imports.__(self, var7, var8, 1i64);
+        var10;
         self.func15(imports, var4);
         self.global0 = var3.wrapping_add(48i32);
     }
@@ -613,8 +613,8 @@ impl<M: Memory> Context<M> {
             if ((var0 & 255i64 != 77i64) as i32 | (var1 & 255i64 != 4i64) as i32 | (var2 & 255i64 != 73i64) as i32 | (var3 & 255i64 != 73i64) as i32 == 0) as i32 != 0 {
                 self.memory.store64(var4 as usize + 8, 3i64 as u64);
                 let var6 = self.func17(imports, var4.wrapping_add(8i32));
-                let var7 = self.func23(imports, var6, 2i64);
-                if var7 != 0 {
+                let var8 = self.func23(imports, var7, 2i64);
+                if var9 != 0 {
                     break 'label0;
                 }
                 self.func24(imports, var0);
@@ -624,9 +624,9 @@ impl<M: Memory> Context<M> {
                 self.memory.store64(var4 as usize + 24, var3 as u64);
                 self.memory.store64(var4 as usize + 16, var2 as u64);
                 self.memory.store64(var4 as usize + 8, (var1 & -4294967296i64 | 4i64) as u64);
-                let var8 = self.func21(imports, 1048816i32, 3i32, var4.wrapping_add(8i32), 3i32);
-                let var9 = imports.__(self, 27311646515383310i64, var8, 2i64);
-                var9;
+                let var10 = self.func21(imports, 1048816i32, 3i32, var4.wrapping_add(8i32), 3i32);
+                let var12 = imports.__(self, 27311646515383310i64, var11, 2i64);
+                var13;
                 self.global0 = var4.wrapping_add(32i32);
                 return 2i64;
             }
@@ -659,19 +659,19 @@ impl<M: Memory> Context<M> {
             var3 = var8;
             self.func35(imports, var1, var3);
             let var9 = self.func22(imports);
-            var4 = var9;
-            let var10 = imports._0(self, var4);
-            var10;
+            var4 = var10;
+            let var11 = imports._0(self, var4);
+            var12;
             self.func38(imports);
             self.func33(imports, var0, var1, var3);
             self.memory.store64(var2 as usize + 40, var0 as u64);
             self.memory.store64(var2 as usize + 32, var4 as u64);
             self.memory.store64(var2 as usize + 24, 3404527886i64 as u64);
-            let var11 = self.func39(imports, var2.wrapping_add(24i32));
+            let var13 = self.func39(imports, var2.wrapping_add(24i32));
             self.func30(imports, var2.wrapping_add(8i32), var1, var3);
-            let var12 = self.memory.load64(var2 as usize + 16) as i64;
-            let var13 = imports._1(self, var11, var12);
-            var13;
+            let var15 = self.memory.load64(var2 as usize + 16) as i64;
+            let var16 = imports._1(self, var14, var15);
+            var17;
             self.global0 = var2.wrapping_add(48i32);
             return 2i64;
             break;
@@ -682,7 +682,7 @@ impl<M: Memory> Context<M> {
     }
     fn func38<I: Imports<Memory = M>>(&mut self, imports: &mut I) {
         let var0 = imports._8(self, 445302209249284i64, 519519244124164i64);
-        var0;
+        var1;
     }
     fn func39<I: Imports<Memory = M>>(&mut self, imports: &mut I, mut var0: i32) -> i64 {
         let mut var1: i32 = 0;
@@ -713,7 +713,7 @@ impl<M: Memory> Context<M> {
                 }
                 let var10 = self.func20(imports, var1.wrapping_add(24i32), 3i32);
                 self.global0 = var1.wrapping_add(48i32);
-                var8 = var10;
+                var8 = var11;
             } else {
                 self.memory.store64(var1.wrapping_add(24i32).wrapping_add(var0) as usize, 2i64 as u64);
                 var0 = var0.wrapping_add(8i32);
@@ -734,14 +734,14 @@ impl<M: Memory> Context<M> {
             unreachable!();
         }
         let var2 = self.func22(imports);
-        var1 = var2;
-        let var3 = imports._0(self, var1);
-        var3;
+        var1 = var3;
+        let var4 = imports._0(self, var1);
+        var5;
         self.func38(imports);
         self.func24(imports, var0);
-        let var4 = self.func41(imports, 4083516257707209486i64, var1);
-        let var5 = imports._1(self, var4, var0);
-        var5;
+        let var6 = self.func41(imports, 4083516257707209486i64, var1);
+        let var8 = imports._1(self, var7, var0);
+        var9;
         2i64
     }
     fn func41<I: Imports<Memory = M>>(&mut self, imports: &mut I, mut var0: i64, mut var1: i64) -> i64 {
@@ -768,7 +768,7 @@ impl<M: Memory> Context<M> {
                 }
                 let var8 = self.func20(imports, var3.wrapping_add(16i32), 2i32);
                 self.global0 = var3.wrapping_add(32i32);
-                var6 = var8;
+                var6 = var9;
             } else {
                 self.memory.store64(var3.wrapping_add(16i32).wrapping_add(var2) as usize, 2i64 as u64);
                 var2 = var2.wrapping_add(8i32);
@@ -823,23 +823,23 @@ impl<M: Memory> Context<M> {
             let var10 = self.memory.load64(var4 as usize + 32) as i64;
             var5 = var10;
             let var11 = imports._0(self, var0);
-            var11;
+            var12;
             self.func35(imports, var5, var2);
             self.func38(imports);
             self.func29(imports, var0, var1, var5, var2, (var3 as u64).wrapping_shr(32i64 as u32) as i64 as i32);
-            let var12 = self.func18(imports, 1048789i32, 7i32);
-            var6 = var12;
+            let var13 = self.func18(imports, 1048789i32, 7i32);
+            var6 = var14;
             self.memory.store64(var4 as usize + 40, var1 as u64);
             self.memory.store64(var4 as usize + 32, var0 as u64);
             self.memory.store64(var4 as usize + 24, var6 as u64);
-            let var13 = self.func39(imports, var4.wrapping_add(24i32));
+            let var15 = self.func39(imports, var4.wrapping_add(24i32));
             self.func30(imports, var4.wrapping_add(8i32), var5, var2);
             self.memory.store64(var4 as usize + 56, (var3 & -4294967296i64 | 4i64) as u64);
-            let var14 = self.memory.load64(var4 as usize + 16) as i64;
-            self.memory.store64(var4 as usize + 48, var14 as u64);
-            let var15 = self.func20(imports, var4.wrapping_add(48i32), 2i32);
-            let var16 = imports._1(self, var13, var15);
-            var16;
+            let var17 = self.memory.load64(var4 as usize + 16) as i64;
+            self.memory.store64(var4 as usize + 48, var17 as u64);
+            let var18 = self.func20(imports, var4.wrapping_add(48i32), 2i32);
+            let var20 = imports._1(self, var16, var19);
+            var21;
             self.global0 = var4.wrapping_sub(-64i32);
             return 2i64;
             break;
@@ -885,7 +885,7 @@ impl<M: Memory> Context<M> {
             let var8 = self.memory.load64(var3 as usize + 16) as i64;
             var4 = var8;
             let var9 = imports._0(self, var0);
-            var9;
+            var10;
             self.func35(imports, var4, var2);
             self.func38(imports);
             self.func34(imports, var0, var4, var2);
@@ -909,9 +909,9 @@ impl<M: Memory> Context<M> {
         self.memory.store64(var4 as usize + 24, 65154533130155790i64 as u64);
         let var6 = self.func39(imports, var4.wrapping_add(24i32));
         self.func30(imports, var4.wrapping_add(8i32), var2, var3);
-        let var7 = self.memory.load64(var4 as usize + 16) as i64;
-        let var8 = imports._1(self, var6, var7);
-        var8;
+        let var8 = self.memory.load64(var4 as usize + 16) as i64;
+        let var9 = imports._1(self, var7, var8);
+        var10;
         self.global0 = var4.wrapping_add(48i32);
     }
     fn func47<I: Imports<Memory = M>>(&mut self, imports: &mut I, mut var0: i64, mut var1: i64, mut var2: i64, mut var3: i64) -> i64 {
@@ -938,21 +938,21 @@ impl<M: Memory> Context<M> {
                 let var12 = self.memory.load64(var4 as usize + 32) as i64;
                 var6 = var12;
                 let var13 = imports._0(self, var0);
-                var13;
+                var14;
                 self.func35(imports, var6, var3);
                 self.func38(imports);
                 self.func25(imports, var4, var1, var0);
-                let var14 = self.memory.load64(var4 as usize) as i64;
-                var8 = var14;
+                let var15 = self.memory.load64(var4 as usize) as i64;
+                var8 = var15;
                 var5 = ((var8 as u64) < var6 as u64) as i32;
-                let var15 = self.memory.load64(var4.wrapping_add(8i32) as usize) as i64;
-                var7 = var15;
+                let var16 = self.memory.load64(var4.wrapping_add(8i32) as usize) as i64;
+                var7 = var16;
                 if ({ let a = var5; let b = (var7 < var3) as i32; if (var3 == var7) as i32 != 0 { a } else { b } }) != 0 {
                     break 'label0;
                 }
                 if ({ let a = (var6 != 0i64) as i32; let b = (var3 > 0i64) as i32; if (var3 == 0) as i32 != 0 { a } else { b } }) != 0 {
-                    let var16 = self.memory.load32(var4 as usize + 16) as i32;
-                    self.func29(imports, var1, var0, var8.wrapping_sub(var6), var7.wrapping_sub(var3).wrapping_sub(var5 as u32 as i64), var16);
+                    let var17 = self.memory.load32(var4 as usize + 16) as i32;
+                    self.func29(imports, var1, var0, var8.wrapping_sub(var6), var7.wrapping_sub(var3).wrapping_sub(var5 as u32 as i64), var17);
                 }
                 self.func34(imports, var1, var6, var3);
                 self.func33(imports, var2, var6, var3);
@@ -988,15 +988,15 @@ impl<M: Memory> Context<M> {
             let var7 = self.memory.load64(var2 as usize + 32) as i64;
             var3 = var7;
             let var8 = imports._0(self, var0);
-            var8;
+            var9;
             self.func35(imports, var3, var1);
             self.func38(imports);
             self.func34(imports, var0, var3, var1);
-            let var9 = self.func41(imports, 2678977294i64, var0);
+            let var10 = self.func41(imports, 2678977294i64, var0);
             self.func30(imports, var2.wrapping_add(8i32), var3, var1);
-            let var10 = self.memory.load64(var2 as usize + 16) as i64;
-            let var11 = imports._1(self, var9, var10);
-            var11;
+            let var12 = self.memory.load64(var2 as usize + 16) as i64;
+            let var13 = imports._1(self, var11, var12);
+            var14;
             self.global0 = var2.wrapping_add(48i32);
             return 2i64;
             break;
@@ -1023,7 +1023,7 @@ impl<M: Memory> Context<M> {
             var1 = var6;
             let var7 = self.memory.load64(var3 as usize + 16) as i64;
             let var8 = imports._0(self, var0);
-            var8;
+            var9;
             self.func35(imports, var7, var1);
             self.func38(imports);
             self.global0 = var3.wrapping_add(32i32);
@@ -1034,7 +1034,30 @@ impl<M: Memory> Context<M> {
         // There should've been an expression value here, but this may be unreachable
         unreachable!();
     }
-   fn func51<I: Imports<Memory = M>>(&mut self, imports: &mut I, mut var0: i32, mut var1: i64) {
+    fn func50<I: Imports<Memory = M>>(&mut self, imports: &mut I) -> i64 {
+        let mut var0: i32 = 0;
+        let mut var1: i64 = 0;
+        let var2 = self.global0;
+        var0 = var2.wrapping_sub(32i32);
+        self.global0 = var0;
+        'label0: loop {
+            let var3 = self.func23(imports, 27311646515383310i64, 2i64);
+            if var4 != 0 {
+                let var5 = imports._1(self, 27311646515383310i64, 2i64);
+                self.func51(imports, var0, var6);
+                let var7 = self.memory.load64(var0 as usize) as i64;
+                if (var7 == 0) as i32 != 0 {
+                    break 'label0;
+                }
+            }
+            unreachable!();
+            break;
+        }
+        let var8 = self.memory.load32(var0.wrapping_add(24i32) as usize) as i64;
+        self.global0 = var0.wrapping_add(32i32);
+        var8.wrapping_shl(32i64 as u32) | 4i64
+    }
+    fn func51<I: Imports<Memory = M>>(&mut self, imports: &mut I, mut var0: i32, mut var1: i64) {
         let mut var2: i32 = 0;
         let mut var3: i32 = 0;
         let mut var4: i64 = 0;
@@ -1090,30 +1113,6 @@ impl<M: Memory> Context<M> {
         }
         self.global0 = var2.wrapping_add(32i32);
     }
-    fn func50<I: Imports<Memory = M>>(&mut self, imports: &mut I) -> i64 {
-        let mut var0: i32 = 0;
-        let mut var1: i64 = 0;
-        let var2 = self.global0;
-        var0 = var2.wrapping_sub(32i32);
-        self.global0 = var0;
-        'label0: loop {
-            let var3 = self.func23(imports, 27311646515383310i64, 2i64);
-            if var3 != 0 {
-                let var4 = imports._1(self, 27311646515383310i64, 2i64);
-                self.func51(imports, var0, var4);
-                let var5 = self.memory.load64(var0 as usize) as i64;
-                if (var5 == 0) as i32 != 0 {
-                    break 'label0;
-                }
-            }
-            unreachable!();
-            break;
-        }
-        let var6 = self.memory.load32(var0.wrapping_add(24i32) as usize) as i64;
-        self.global0 = var0.wrapping_add(32i32);
-        var6.wrapping_shl(32i64 as u32) | 4i64
-    }
-
     fn func52<I: Imports<Memory = M>>(&mut self, imports: &mut I) -> i64 {
         let mut var0: i32 = 0;
         let mut var1: i64 = 0;
@@ -1122,20 +1121,20 @@ impl<M: Memory> Context<M> {
         self.global0 = var0;
         'label0: loop {
             let var3 = self.func23(imports, 27311646515383310i64, 2i64);
-            if var3 != 0 {
-                let var4 = imports._1(self, 27311646515383310i64, 2i64);
-                self.func51(imports, var0, var4);
-                let var5 = self.memory.load64(var0 as usize) as i64;
-                if (var5 == 0) as i32 != 0 {
+            if var4 != 0 {
+                let var5 = imports._1(self, 27311646515383310i64, 2i64);
+                self.func51(imports, var0, var6);
+                let var7 = self.memory.load64(var0 as usize) as i64;
+                if (var7 == 0) as i32 != 0 {
                     break 'label0;
                 }
             }
             unreachable!();
             break;
         }
-        let var6 = self.memory.load64(var0 as usize + 8) as i64;
+        let var8 = self.memory.load64(var0 as usize + 8) as i64;
         self.global0 = var0.wrapping_add(32i32);
-        var6
+        var8
     }
     fn func53<I: Imports<Memory = M>>(&mut self, imports: &mut I) -> i64 {
         let mut var0: i32 = 0;
@@ -1145,20 +1144,20 @@ impl<M: Memory> Context<M> {
         self.global0 = var0;
         'label0: loop {
             let var3 = self.func23(imports, 27311646515383310i64, 2i64);
-            if var3 != 0 {
-                let var4 = imports._1(self, 27311646515383310i64, 2i64);
-                self.func51(imports, var0, var4);
-                let var5 = self.memory.load64(var0 as usize) as i64;
-                if (var5 == 0) as i32 != 0 {
+            if var4 != 0 {
+                let var5 = imports._1(self, 27311646515383310i64, 2i64);
+                self.func51(imports, var0, var6);
+                let var7 = self.memory.load64(var0 as usize) as i64;
+                if (var7 == 0) as i32 != 0 {
                     break 'label0;
                 }
             }
             unreachable!();
             break;
         }
-        let var6 = self.memory.load64(var0.wrapping_add(16i32) as usize) as i64;
+        let var8 = self.memory.load64(var0.wrapping_add(16i32) as usize) as i64;
         self.global0 = var0.wrapping_add(32i32);
-        var6
+        var8
     }
     fn func54<I: Imports<Memory = M>>(&mut self, imports: &mut I) {
     }
