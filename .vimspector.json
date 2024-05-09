@@ -5,8 +5,8 @@
       "filetypes": [ "rust" ],
       "configuration": {
         "request": "launch",
-        "program": "${workspaceRoot}/target/debug/auditor",
-        "args": ["/home/devfed/Projects/soroban-examples/token/target/wasm32-unknown-unknown/release/soroban_token_contract.optimized.wasm", "symbol"]
+        "program": "${workspaceRoot}/target/debug/soroban-auditor",
+        "args": ["${workspaceRoot}/tests/soroban_token_contract.optimized.wasm"]
       }
     }
   }
