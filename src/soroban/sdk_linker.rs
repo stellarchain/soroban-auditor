@@ -3,6 +3,7 @@ use levenshtein::levenshtein;
 use serde::Deserialize;
 use std::error::Error;
 use std::io::Read;
+use std::str::FromStr;
 use std::{fs::File, io::BufReader};
 use tlsh_fixed::{BucketKind, ChecksumKind, Tlsh, TlshBuilder, TlshError, Version};
 
@@ -59,37 +60,27 @@ pub fn search_for_patterns(function_body: &str) -> Option<Vec<(String, String)>>
     }
 }
 
-fn calculate_pattern_score(function_body: &str, pattern: &Pattern) -> usize {
-    let prefix_score = calculate_score_for_pattern(&function_body, &pattern.pattern);
-    let suffix_score = calculate_score_for_pattern(&function_body, &pattern.pattern);
-
-    match prefix_score.checked_add(suffix_score) {
-        Some(score) => score,
-        None => {
-            println!("Overflow occurred while calculating pattern score.");
-            std::usize::MAX // Return a large value to indicate overflow
-        }
-    }
-}
-
-fn calculate_score_for_pattern(function_body: &str, pattern: &str) -> usize {
+fn calculate_score_for_pattern(function_body: &str, pattern: &str) -> Option<usize> {
     let pattern_length = pattern.len();
     if pattern_length > function_body.len() {
-        return std::usize::MAX;
+        return None;
     }
     let mut min_distance = std::usize::MAX;
     for i in 0..=function_body.len() - pattern_length {
-        let window = &function_body[i..i + pattern_length];
-        let distance = levenshtein(window, pattern);
-
-        if distance < min_distance {
-            min_distance = distance;
-            if distance == 0 {
-                break;
+        if let Some(window) = get_utf8_slice(&function_body, i, i + pattern_length) {
+            let distance = levenshtein(window, pattern);
+            if distance < min_distance {
+                min_distance = distance;
+                if distance == 0 {
+                    break;
+                }
             }
         }
     }
-    min_distance
+    if min_distance == std::usize::MAX {
+        return None;
+    }
+    Some(min_distance)
 }
 
 fn load_patterns_hash_map() -> Result<PatternConfig, Box<dyn std::error::Error>> {
@@ -120,35 +111,22 @@ pub fn get_lcs_pattern(function_body: &str, pattern: &str) -> Result<String, Box
 }
 
 pub fn replace_sequence(pattern: &Pattern, body: &str) -> Option<String> {
-    let prefix_position = find_pattern_position(body, &pattern.pattern)?;
-    let replaced = format!("{}{}", &body[..prefix_position], &pattern.body_replace);
+    let mut replaced = String::from_str(body).unwrap();
+    if let Some(prefix_position) = calculate_score_for_pattern(&body, &pattern.pattern){
+        replaced = format!("{}{}", &body[..prefix_position], &pattern.body_replace);
+    }
     Some(replaced)
 }
 
-pub fn find_pattern_position(body: &str, pattern: &str) -> Option<usize> {
-    let pattern_length = pattern.len();
-    let body_length = body.len();
-
-    let mut min_distance = std::usize::MAX;
-    let mut found_index = None;
-
-    for i in 0..=body_length {
-        let window = if i + pattern_length <= body_length {
-            &body[i..i + pattern_length]
-        } else {
-            &body[i..] 
-        };
-
-        let distance = levenshtein(window, pattern);
-
-        if distance < min_distance {
-            min_distance = distance;
-            found_index = Some(i);
-            if distance == 0 {
-                break; // Exact match found, no need to search further
-            }
-        }
+pub fn get_utf8_slice(s: &str, start: usize, end: usize) -> Option<&str> {
+  let mut iter = s.char_indices()
+        .map(|(pos, _)| pos)
+        .chain(Some(s.len()))
+        .skip(start)
+        .peekable();
+    let start_pos = *iter.peek()?;
+    for _ in start..end {
+        iter.next();
     }
-
-    found_index
+    Some(&s[start_pos..*iter.peek().unwrap_or(&s.len())])
 }
