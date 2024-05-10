@@ -381,7 +381,7 @@ pub fn build<W: Write>(
                 let fn_type = function.ty;
                 let real_name = function.real_name;
                 write!(writer, "{}", indentation).unwrap();
-                for result in fn_type.results() {
+                for _ in fn_type.results() {
                     write!(writer, "let var{} = ", expr_index).unwrap();
                     expr_index += 1;
                 }
@@ -406,7 +406,7 @@ pub fn build<W: Write>(
                 } else {
                     writeln!(writer, ");").unwrap();
                 }
-                for result in fn_type.results() {
+                for _ in fn_type.results() {
                     expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                     expr_index += 1;
                 }
@@ -416,7 +416,7 @@ pub fn build<W: Write>(
                 indirect_fns.entry(type_index).or_insert_with(Vec::new);
 
                 write!(writer, "{}", indentation).unwrap();
-                for result in fn_type.results() {
+                for _ in fn_type.results() {
                     write!(writer, "let var{} = ", expr_index).unwrap();
                     expr_index += 1;
                 }
@@ -432,7 +432,7 @@ pub fn build<W: Write>(
                     write!(writer, ", {}", expr).unwrap();
                 }
                 writeln!(writer, ");").unwrap();
-                for result in fn_type.results() {
+                for _ in fn_type.results() {
                     expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                     expr_index += 1;
                 }

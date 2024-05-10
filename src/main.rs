@@ -9,6 +9,9 @@ use parity_wasm::elements::{
     External, FunctionType, ImportCountType, Instruction, Internal, NameSection, Section, Type,
     ValueType,
 };
+use quote::{format_ident, quote};
+use soroban::common::{env_common_modules_result, take_common_module};
+use soroban::contract::read_contract_specs;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -21,6 +24,7 @@ mod code_builder;
 mod expr_builder;
 mod precedence;
 mod reorder_analysis;
+mod soroban;
 
 #[derive(StructOpt)]
 struct Opt {
@@ -81,7 +85,7 @@ pub enum BlockKind {
     },
 }
 
-fn to_rs_type(t: ValueType) -> &'static str {
+pub fn to_rs_type(t: ValueType) -> &'static str {
     match t {
         ValueType::I32 => "i32",
         ValueType::I64 => "i64",
@@ -105,7 +109,7 @@ impl fmt::Display for Indentation {
 
 fn mangle_fn_name(name: &str) -> String {
     let mut s = String::new();
-    for (i, mut c) in name.chars().enumerate() {
+    for (i, c) in name.chars().enumerate() {
         if i == 0 {
             if UnicodeXID::is_xid_start(c) {
                 s.push(c);
@@ -170,6 +174,14 @@ fn main() {
     let input = opt.input;
     let output = opt.output.unwrap_or_else(|| input.with_extension("rs"));
 
+    let specs_contract = read_contract_specs(&input);
+    let modules = match env_common_modules_result() {
+        Ok(modules) => modules,
+        Err(err) => {
+            eprintln!("Error: {}", err);
+            panic!("Error loading modules soroban.")
+        }
+    };
     let module = deserialize_file(input).unwrap();
     let module = module.parse_names().unwrap_or_else(|(_, m)| m);
 
@@ -201,8 +213,12 @@ fn main() {
                 let fn_type = match *typ {
                     Type::Function(ref t) => t,
                 };
+                let field_name = match take_common_module(&modules, import.module().to_owned().as_str(), import.field().to_owned().as_str()) {
+                    Some(module_function) => module_function.function_name,
+                    None => import.field().to_owned(),
+                };
                 functions.push(Function {
-                    name: import.field().to_owned(),
+                    name: field_name,
                     ty: fn_type,
                     ty_index,
                     real_name: None,
@@ -240,11 +256,8 @@ fn main() {
 
     writeln!(
         writer,
-        "#![allow(
-    unreachable_code, dead_code, unused_assignments, unused_mut, unused_variables, non_snake_case,
-    non_upper_case_globals, unconditional_recursion, path_statements
-)]
-
+        "#![no_std]
+use soroban_sdk::{{contract, contractimpl, contracttype, token, Address, Env, Vec}};
 pub const PAGE_SIZE: usize = 64 << 10;
 
 pub trait Imports {{
@@ -262,9 +275,9 @@ pub trait Imports {{
         for (i, &param) in function.ty.params().iter().enumerate() {
             write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
         }
-        write!(writer, ") ->").unwrap();
+        write!(writer, ")").unwrap();
         for result in function.ty.results() {
-            write!(writer, " {}", to_rs_type(*result)).unwrap();
+            write!(writer, " -> {}", to_rs_type(*result)).unwrap();
         }
         writeln!(writer, ";").unwrap();
     }
@@ -352,11 +365,13 @@ pub trait Memory {
     fn size(&mut self) -> i32;
 }
 
-pub struct Instance<I: Imports<Memory = M>, M: Memory> {
+#[contract]
+pub struct Contract<I: Imports<Memory = M>, M: Memory> {
     pub imports: I,
     pub context: Context<M>,
 }
 
+#[contracttype]
 pub struct Context<M: Memory> {
     pub memory: M,"#
     )
@@ -390,7 +405,8 @@ pub struct Context<M: Memory> {
             "{}",
             r#"}
 
-pub mod consts {"#
+#[contracttype]
+pub mod Consts {"#
         )
         .unwrap();
 
@@ -420,7 +436,8 @@ pub mod consts {"#
         "{}",
         r#"}
 
-impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
+#[contractimpl]
+impl<I: Imports<Memory = M>, M: Memory> Contract<I, M> {
     pub fn new(imports: I, mut memory: M) -> Self {"#
     )
     .unwrap();
@@ -590,6 +607,8 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
     )
     .unwrap();
 
+    //load soroban specs
+
     for export in exports.entries() {
         if let &Internal::Function(fn_index) = export.internal() {
             let function = &functions[fn_index as usize];
@@ -603,8 +622,8 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
                 write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
             }
             write!(writer, ")").unwrap();
-            if let Some(ret_ty) = function.ty.results().first() {
-                write!(writer, " -> {}", to_rs_type(*ret_ty)).unwrap();
+            for result in function.ty.results() {
+                write!(writer, " -> {}", to_rs_type(*result)).unwrap();
             }
             writeln!(writer, " {{").unwrap();
             write!(
@@ -631,8 +650,8 @@ impl<I: Imports<Memory = M>, M: Memory> Instance<I, M> {
                 write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
             }
             write!(writer, ")").unwrap();
-            if let Some(ret_ty) = fn_type.results().first() {
-                write!(writer, " -> {}", to_rs_type(*ret_ty)).unwrap();
+            for result in fn_type.results() {
+                write!(writer, " -> {}", to_rs_type(*result)).unwrap();
             }
             write!(
                 writer,
@@ -679,8 +698,8 @@ impl<M: Memory> Context<M> {"#
                 write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
             }
             write!(writer, ")").unwrap();
-            if let Some(ret_ty) = function.ty.results().first() {
-                write!(writer, " -> {}", to_rs_type(*ret_ty)).unwrap();
+            for result in function.ty.results() {
+                write!(writer, " -> {}", to_rs_type(*result)).unwrap();
             }
             writeln!(writer, " {{").unwrap();
             write!(writer, "        self.{}(imports", function.name).unwrap();
@@ -718,8 +737,8 @@ impl<M: Memory> Context<M> {"#
             write!(writer, ", mut var{}: {}", i, to_rs_type(param)).unwrap();
         }
         write!(writer, ")").unwrap();
-        if let Some(ret_ty) = fn_type.results().first() {
-            write!(writer, " -> {}", to_rs_type(*ret_ty)).unwrap();
+        for result in fn_type.results() {
+            write!(writer, " -> {}", to_rs_type(*result)).unwrap();
         }
         writeln!(writer, " {{").unwrap();
 
@@ -770,8 +789,8 @@ impl<M: Memory> Context<M> {"#
             write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
         }
         write!(writer, ")").unwrap();
-        if let Some(ret_ty) = fn_type.results().first() {
-            write!(writer, " -> {}", to_rs_type(*ret_ty)).unwrap();
+        for result in fn_type.results() {
+            write!(writer, " -> {}", to_rs_type(*result)).unwrap();
         }
         write!(
             writer,
@@ -868,9 +887,10 @@ fn is_const_expr_immutable_instead_of_const(opcodes: &[Instruction]) -> bool {
         opcodes
     );
     match opcodes[0] {
-        Instruction::I32Const(_) | Instruction::I64Const(_) | Instruction::F32Const(_) | Instruction::F64Const(_) => {
-            false
-        }
+        Instruction::I32Const(_)
+        | Instruction::I64Const(_)
+        | Instruction::F32Const(_)
+        | Instruction::F64Const(_) => false,
         _ => true, // This could actually be fully const, but it's hard to tell this early
     }
 }
