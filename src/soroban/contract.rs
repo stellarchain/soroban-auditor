@@ -1,3 +1,4 @@
+use crate::mangle_fn_name;
 use proc_macro2::TokenStream;
 use soroban_spec::read::from_wasm;
 use soroban_spec_rust::types::generate_enum;
@@ -5,13 +6,12 @@ use soroban_spec_rust::types::generate_error_enum;
 use soroban_spec_rust::types::generate_struct;
 use soroban_spec_rust::types::generate_type_ident;
 use soroban_spec_rust::types::generate_union;
-use stellar_xdr::curr::ScSpecTypeDef;
+use std::fmt;
 use std::fs::File;
 use std::io::Read;
-use std::fmt;
 use stellar_xdr::curr::ScSpecEntry;
-
-
+use stellar_xdr::curr::ScSpecTypeDef;
+#[derive(Clone)]
 pub struct FunctionSpecResults {
     type_ident: TokenStream,
 }
@@ -24,10 +24,10 @@ impl FunctionSpecResults {
 
 impl fmt::Display for FunctionSpecResults {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-         write!(f, "Formatted representation of ExtendedFunctionReturnType")
+        write!(f, "Formatted representation of ExtendedFunctionReturnType")
     }
 }
-
+#[derive(Clone)]
 pub struct FunctionSpecParam {
     name: String,
     spec_def: ScSpecTypeDef,
@@ -53,7 +53,23 @@ impl fmt::Display for FunctionSpecParam {
     }
 }
 
+impl fmt::Display for FunctionContractSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let inputs_str: Vec<String> = self
+            .inputs
+            .iter()
+            .map(|param| format!(", {}: {}", param.name, param.type_ident))
+            .collect();
 
+        let output_str = match &self.output {
+            Some(return_type) => format!("-> {}", return_type.type_ident),
+            None => "".to_string(),
+        };
+
+        write!(f, "\tpub fn {}(&mut self{}) {}", mangle_fn_name(self.name.as_str()), inputs_str.join(""), output_str)
+    }
+}
+#[derive(Clone)]
 pub struct FunctionContractSpec {
     name: String,
     inputs: Vec<FunctionSpecParam>,
@@ -90,6 +106,15 @@ impl FunctionContractSpec {
     }
 }
 
+pub fn find_function_specs(spec_fns_result: &Vec<FunctionContractSpec>, function_name_to_find: &str) -> Option<FunctionContractSpec> {
+     for function_info in spec_fns_result {
+        if function_info.name == function_name_to_find {
+            return Some(function_info.clone());
+        }
+    }
+    None
+}
+
 pub fn read_contract_specs<P: AsRef<::std::path::Path>>(
     file_path: P,
 ) -> Result<Vec<FunctionContractSpec>, Box<dyn std::error::Error>> {
@@ -97,7 +122,6 @@ pub fn read_contract_specs<P: AsRef<::std::path::Path>>(
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
     let entries = from_wasm(&buffer).unwrap();
-
 
     let mut spec_fns = Vec::new();
     let mut spec_structs = Vec::new();
@@ -115,7 +139,11 @@ pub fn read_contract_specs<P: AsRef<::std::path::Path>>(
                     .map(|input| {
                         let name = input.name.to_utf8_string().unwrap();
                         let type_ident = generate_type_ident(&input.type_);
-                        FunctionSpecParam { name, spec_def: input.type_.clone(), type_ident }
+                        FunctionSpecParam {
+                            name,
+                            spec_def: input.type_.clone(),
+                            type_ident,
+                        }
                     })
                     .collect();
 
@@ -147,7 +175,12 @@ pub fn read_contract_specs<P: AsRef<::std::path::Path>>(
             }
         }
     }
-    let spec_entries = (&spec_fns, spec_structs, spec_unions, spec_enums, spec_error_enums);
-    //TODO: add all spec entry types
+    let spec_entries = (
+        &spec_fns,
+        spec_structs,
+        spec_unions,
+        spec_enums,
+        spec_error_enums,
+    );
     Ok(spec_fns)
 }

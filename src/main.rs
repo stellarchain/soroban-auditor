@@ -4,6 +4,7 @@ extern crate structopt;
 extern crate unicode_xid;
 extern crate unidecode;
 
+use crate::soroban::contract::find_function_specs;
 use parity_wasm::deserialize_file;
 use parity_wasm::elements::{
     External, FunctionType, ImportCountType, Instruction, Internal, NameSection, Section, Type,
@@ -12,7 +13,7 @@ use parity_wasm::elements::{
 use quote::{format_ident, quote};
 use serde_json::Value;
 use soroban::common::{env_common_modules_result, take_common_module, take_common_module_by_name};
-use soroban::contract::read_contract_specs;
+use soroban::contract::{read_contract_specs, FunctionContractSpec};
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -176,7 +177,6 @@ fn main() {
     let input = opt.input;
     let output = opt.output.unwrap_or_else(|| input.with_extension("rs"));
 
-    let specs_contract = read_contract_specs(&input);
     let modules = match env_common_modules_result() {
         Ok(modules) => modules,
         Err(err) => {
@@ -184,7 +184,7 @@ fn main() {
             panic!("Error loading modules soroban.")
         }
     };
-    let module = deserialize_file(input).unwrap();
+    let module = deserialize_file(&input).unwrap();
     let module = module.parse_names().unwrap_or_else(|(_, m)| m);
 
     let mut writer = BufWriter::new(File::create(output).expect("Couldn't create output file"));
@@ -332,8 +332,7 @@ pub trait Imports {{
         write!(writer, ")").unwrap();
         if !return_type.is_empty() {
             write!(writer, " -> {}", return_type).unwrap();
-        }else{
-
+        } else {
             for result in function.ty.results() {
                 write!(writer, " -> {}", to_rs_type(*result)).unwrap();
             }
@@ -668,21 +667,45 @@ impl<I: Imports<Memory = M>, M: Memory> Contract<I, M> {
 
     //load soroban specs
 
+    let contract_specs = match read_contract_specs(&input) {
+        Ok(spec_fns_result) => spec_fns_result,
+        Err(err) => Vec::new(),
+    };
+
     for export in exports.entries() {
         if let &Internal::Function(fn_index) = export.internal() {
             let function = &functions[fn_index as usize];
+            let spec_fn = match find_function_specs(&contract_specs, export.field()) {
+                Some(spec_fn) => spec_fn,
+                None => FunctionContractSpec::default(),
+            };
+
             write!(
                 writer,
                 "    pub fn {}(&mut self",
                 mangle_fn_name(export.field())
             )
             .unwrap();
+
+            let arguments = spec_fn.inputs();
             for (i, &param) in function.ty.params().iter().enumerate() {
-                write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
+                if let Some(argument) = arguments.get(i) {
+                    write!(writer, ", {}: {}", argument.name(), argument.type_ident()).unwrap();
+                } else {
+                    write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
+                }
             }
+
             write!(writer, ")").unwrap();
-            for result in function.ty.results() {
-                write!(writer, " -> {}", to_rs_type(*result)).unwrap();
+
+            let return_type = spec_fn.output();
+
+            if let Some(argument) = return_type {
+                write!(writer, " -> {}", argument.type_ident()).unwrap();
+            } else {
+                for result in function.ty.results() {
+                    write!(writer, " -> {}", to_rs_type(*result)).unwrap();
+                }
             }
             writeln!(writer, " {{").unwrap();
             write!(
@@ -692,7 +715,11 @@ impl<I: Imports<Memory = M>, M: Memory> Contract<I, M> {
             )
             .unwrap();
             for (i, _) in function.ty.params().iter().enumerate() {
-                write!(writer, ", var{}", i).unwrap();
+                if let Some(argument) = arguments.get(i) {
+                    write!(writer, ", {}", argument.name()).unwrap();
+                } else {
+                    write!(writer, ", var{}", i).unwrap();
+                }
             }
             writeln!(writer, ")").unwrap();
             writeln!(writer, "    }}").unwrap();
@@ -743,6 +770,10 @@ impl<M: Memory> Context<M> {"#
     for export in exports.entries() {
         if let &Internal::Function(fn_index) = export.internal() {
             let function = &mut functions[fn_index as usize];
+            let spec_fn = match find_function_specs(&contract_specs, export.field()) {
+                Some(spec_fn) => spec_fn,
+                None => FunctionContractSpec::default(),
+            };
             if function.name == export.field() {
                 function.make_public = true;
                 continue;
@@ -753,17 +784,31 @@ impl<M: Memory> Context<M> {"#
                 mangle_fn_name(export.field())
             )
             .unwrap();
+            let arguments = spec_fn.inputs();
             for (i, &param) in function.ty.params().iter().enumerate() {
-                write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
+                if let Some(argument) = arguments.get(i) {
+                    write!(writer, ", {}: {}", argument.name(), argument.type_ident()).unwrap();
+                } else {
+                    write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
+                }
             }
             write!(writer, ")").unwrap();
-            for result in function.ty.results() {
-                write!(writer, " -> {}", to_rs_type(*result)).unwrap();
+            let return_type = spec_fn.output();
+            if let Some(argument) = return_type {
+                write!(writer, " -> {}", argument.type_ident()).unwrap();
+            } else {
+                for result in function.ty.results() {
+                    write!(writer, " -> {}", to_rs_type(*result)).unwrap();
+                }
             }
             writeln!(writer, " {{").unwrap();
             write!(writer, "        self.{}(imports", function.name).unwrap();
             for (i, _) in function.ty.params().iter().enumerate() {
-                write!(writer, ", var{}", i).unwrap();
+                if let Some(argument) = arguments.get(i) {
+                    write!(writer, ", {}", argument.name()).unwrap();
+                } else {
+                    write!(writer, ", var{}", i).unwrap();
+                }
             }
             writeln!(writer, ")").unwrap();
             writeln!(writer, "    }}").unwrap();
@@ -793,7 +838,7 @@ impl<M: Memory> Context<M> {"#
         )
         .unwrap();
         for (i, &param) in fn_type.params().iter().enumerate() {
-            write!(writer, ", mut var{}: {}", i, to_rs_type(param)).unwrap();
+            write!(writer, ", mut arg{}: {}", i, to_rs_type(param)).unwrap();
         }
         write!(writer, ")").unwrap();
         for result in fn_type.results() {
@@ -828,6 +873,8 @@ impl<M: Memory> Context<M> {"#
             types,
             body.code().elements(),
             2,
+            &contract_specs,
+            fn_index
         );
     }
 

@@ -1,4 +1,5 @@
-use crate::expr_builder::ExprBuilder;
+use crate::find_function_specs;
+use crate::{expr_builder::ExprBuilder, soroban::contract::FunctionContractSpec};
 use parity_wasm::elements::{BlockType, Instruction, Type, TypeSection};
 use crate::reorder_analysis::can_local_be_reordered;
 use std::collections::BTreeMap;
@@ -48,6 +49,8 @@ pub fn build<W: Write>(
     types: &TypeSection,
     code: &[Instruction],
     base_indentation: usize,
+    contract_specs: &Vec<FunctionContractSpec>,
+    func_index: usize,
 ) {
     let mut expr_builder = ExprBuilder::new();
     let mut blocks = Vec::new();
@@ -383,7 +386,6 @@ pub fn build<W: Write>(
                 write!(writer, "{}", indentation).unwrap();
                 for _ in fn_type.results() {
                     write!(writer, "let var{} = ", expr_index).unwrap();
-                    expr_index += 1;
                 }
                 let is_imported = (fn_index as usize) < import_count;
                 if is_imported {
@@ -408,8 +410,8 @@ pub fn build<W: Write>(
                 }
                 for _ in fn_type.results() {
                     expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
-                    expr_index += 1;
                 }
+                expr_index += 1;
             }
             CallIndirect(type_index, _) => {
                 let Type::Function(ref fn_type) = types.types()[type_index as usize];
@@ -418,7 +420,6 @@ pub fn build<W: Write>(
                 write!(writer, "{}", indentation).unwrap();
                 for _ in fn_type.results() {
                     write!(writer, "let var{} = ", expr_index).unwrap();
-                    expr_index += 1;
                 }
                 let (_, fn_ptr) = expr_builder.pop().unwrap();
                 write!(
@@ -434,8 +435,8 @@ pub fn build<W: Write>(
                 writeln!(writer, ");").unwrap();
                 for _ in fn_type.results() {
                     expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
-                    expr_index += 1;
                 }
+                expr_index += 1;
             }
             Drop => {
                 let (_, a) = expr_builder.pop().unwrap();
@@ -462,12 +463,26 @@ pub fn build<W: Write>(
                 ));
             }
             GetLocal(i) => {
+                let current_func = &functions[func_index];
+                let count_params = current_func.ty.params().len();
+                let mut prefix = "var";
+                if i < count_params as u32 {
+                    prefix = "arg";
+                }
                 if can_local_be_reordered(i, &blocks, functions, types, code.as_slice()) {
-                    let dst = format!("var{}", i);
+                    let spec_fn = match find_function_specs(&contract_specs, current_func.name.as_str()) {
+                        Some(spec_fn) => spec_fn,
+                        None => FunctionContractSpec::default(),
+                    };
+                    let arguments  = spec_fn.inputs();
+                    let mut dst = format!("{}{}", prefix, i);
+                    if let Some(argument) = arguments.get(i as usize) {
+                        dst = format!("argument_{}", argument);
+                    }
                     expr_builder.push((precedence::PATH, dst));
                 } else {
-                    let dst = format!("var{}", expr_index);
-                    writeln!(writer, "{}let {} = var{};", indentation, dst, i).unwrap();
+                    let dst = format!("{}{}", prefix, expr_index);
+                    writeln!(writer, "{}let {} = {}{};", indentation, dst, prefix, i).unwrap();
                     expr_index += 1;
                     expr_builder.push((precedence::PATH, dst));
                 }

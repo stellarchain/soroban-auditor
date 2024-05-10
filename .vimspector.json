@@ -6,7 +6,7 @@
       "configuration": {
         "request": "launch",
         "program": "${workspaceRoot}/target/debug/soroban-auditor",
-        "args": ["${workspaceRoot}/tests/soroban_token_contract.optimized.wasm"]
+        "args": ["${workspaceRoot}/tests/random_contract.wasm"]
       }
     }
   }
