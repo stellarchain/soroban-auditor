@@ -52,3 +52,28 @@ pub fn take_common_module(modules: &[Value], module_name: &str, field_name: &str
     }
     None
 }
+
+pub fn take_common_module_by_name(modules: &[Value], module_name: &str, field_name: &str) -> Option<ModuleFunction> {
+  for module in modules {
+        if let Some(name_value) = module.get("name").and_then(Value::as_str) {
+            if name_value == module_name {
+                if let Some(functions) = module.get("functions").and_then(Value::as_array) {
+                    for function in functions {
+                        if let Some(function_obj) = function.as_object() {
+                            if let Some(export_value) = function_obj.get("name").and_then(Value::as_str) {
+                                if export_value == field_name {
+                                    return Some(ModuleFunction {
+                                        module_name: name_value.to_string(),
+                                        function_name: function_obj.get("name").and_then(Value::as_str).unwrap_or_default().to_string(),
+                                        function: function.clone(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}

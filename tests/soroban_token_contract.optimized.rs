@@ -1,24 +1,23 @@
 #![no_std]
 use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env, Vec};
-pub const PAGE_SIZE: usize = 64 << 10;
 
 pub trait Imports {
     type Memory: Memory;
-    fn extend_contract_data_ttl(&mut self, context: &mut Context<Self::Memory>, var0: i64, var1: i64, var2: i64, var3: i64) -> i64;
-    fn get_contract_data(&mut self, context: &mut Context<Self::Memory>, var0: i64, var1: i64) -> i64;
-    fn put_contract_data(&mut self, context: &mut Context<Self::Memory>, var0: i64, var1: i64, var2: i64) -> i64;
-    fn require_auth(&mut self, context: &mut Context<Self::Memory>, var0: i64) -> i64;
-    fn contract_event(&mut self, context: &mut Context<Self::Memory>, var0: i64, var1: i64) -> i64;
-    fn vec_new_from_linear_memory(&mut self, context: &mut Context<Self::Memory>, var0: i64, var1: i64) -> i64;
-    fn obj_to_i128_hi64(&mut self, context: &mut Context<Self::Memory>, var0: i64) -> i64;
-    fn obj_to_i128_lo64(&mut self, context: &mut Context<Self::Memory>, var0: i64) -> i64;
-    fn obj_from_i128_pieces(&mut self, context: &mut Context<Self::Memory>, var0: i64, var1: i64) -> i64;
-    fn symbol_new_from_linear_memory(&mut self, context: &mut Context<Self::Memory>, var0: i64, var1: i64) -> i64;
-    fn map_new_from_linear_memory(&mut self, context: &mut Context<Self::Memory>, var0: i64, var1: i64, var2: i64) -> i64;
-    fn map_unpack_to_linear_memory(&mut self, context: &mut Context<Self::Memory>, var0: i64, var1: i64, var2: i64, var3: i64) -> i64;
-    fn get_ledger_sequence(&mut self, context: &mut Context<Self::Memory>) -> i64;
-    fn has_contract_data(&mut self, context: &mut Context<Self::Memory>, var0: i64, var1: i64) -> i64;
-    fn extend_current_contract_instance_and_code_ttl(&mut self, context: &mut Context<Self::Memory>, var0: i64, var1: i64) -> i64;
+    fn extend_contract_data_ttl(&mut self, context: &mut Context<Self::Memory>, k: Val, t: StorageType, threshold: U32Val, extend_to: U32Val) -> Void;
+    fn get_contract_data(&mut self, context: &mut Context<Self::Memory>, k: Val, t: StorageType) -> Val;
+    fn put_contract_data(&mut self, context: &mut Context<Self::Memory>, k: Val, v: Val, t: StorageType) -> Void;
+    fn require_auth(&mut self, context: &mut Context<Self::Memory>, address: AddressObject) -> Void;
+    fn contract_event(&mut self, context: &mut Context<Self::Memory>, topics: VecObject, data: Val) -> Void;
+    fn vec_new_from_linear_memory(&mut self, context: &mut Context<Self::Memory>, vals_pos: U32Val, len: U32Val) -> VecObject;
+    fn obj_to_i128_hi64(&mut self, context: &mut Context<Self::Memory>, obj: I128Object) -> i64;
+    fn obj_to_i128_lo64(&mut self, context: &mut Context<Self::Memory>, obj: I128Object) -> u64;
+    fn obj_from_i128_pieces(&mut self, context: &mut Context<Self::Memory>, hi: i64, lo: u64) -> I128Object;
+    fn symbol_new_from_linear_memory(&mut self, context: &mut Context<Self::Memory>, lm_pos: U32Val, len: U32Val) -> SymbolObject;
+    fn map_new_from_linear_memory(&mut self, context: &mut Context<Self::Memory>, keys_pos: U32Val, vals_pos: U32Val, len: U32Val) -> MapObject;
+    fn map_unpack_to_linear_memory(&mut self, context: &mut Context<Self::Memory>, map: MapObject, keys_pos: U32Val, vals_pos: U32Val, len: U32Val) -> Void;
+    fn get_ledger_sequence(&mut self, context: &mut Context<Self::Memory>) -> U32Val;
+    fn has_contract_data(&mut self, context: &mut Context<Self::Memory>, k: Val, t: StorageType) -> Bool;
+    fn extend_current_contract_instance_and_code_ttl(&mut self, context: &mut Context<Self::Memory>, threshold: U32Val, extend_to: U32Val) -> Void;
 }
 
 pub trait Memory {

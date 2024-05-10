@@ -10,7 +10,8 @@ use parity_wasm::elements::{
     ValueType,
 };
 use quote::{format_ident, quote};
-use soroban::common::{env_common_modules_result, take_common_module};
+use serde_json::Value;
+use soroban::common::{env_common_modules_result, take_common_module, take_common_module_by_name};
 use soroban::contract::read_contract_specs;
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -51,6 +52,7 @@ struct Opt {
 
 pub struct Function<'a> {
     name: String,
+    module_name: String,
     ty: &'a FunctionType,
     ty_index: u32,
     real_name: Option<&'a String>,
@@ -213,12 +215,19 @@ fn main() {
                 let fn_type = match *typ {
                     Type::Function(ref t) => t,
                 };
-                let field_name = match take_common_module(&modules, import.module().to_owned().as_str(), import.field().to_owned().as_str()) {
-                    Some(module_function) => module_function.function_name,
-                    None => import.field().to_owned(),
+                let module_import = take_common_module(
+                    &modules,
+                    import.module().to_owned().as_str(),
+                    import.field().to_owned().as_str(),
+                );
+                let (field_name, module_name) = match module_import {
+                    Some(module) => (module.function_name, module.module_name),
+                    None => (import.field().to_owned(), String::new()),
                 };
+
                 functions.push(Function {
                     name: field_name,
+                    module_name,
                     ty: fn_type,
                     ty_index,
                     real_name: None,
@@ -243,6 +252,7 @@ fn main() {
         }
         functions.push(Function {
             name,
+            module_name: String::new(),
             ty: fn_type,
             ty_index,
             real_name,
@@ -258,7 +268,6 @@ fn main() {
         writer,
         "#![no_std]
 use soroban_sdk::{{contract, contractimpl, contracttype, token, Address, Env, Vec}};
-pub const PAGE_SIZE: usize = 64 << 10;
 
 pub trait Imports {{
     type Memory: Memory;"
@@ -272,12 +281,62 @@ pub trait Imports {{
             function.name
         )
         .unwrap();
+
+        let module_import = take_common_module_by_name(
+            &modules,
+            function.module_name.as_str(),
+            function.name.as_str(),
+        );
+
+        let (arguments, return_type) = match module_import {
+            Some(module) => {
+                let args = module.function.as_object().and_then(|obj| obj.get("args"));
+                let ret_type = module
+                    .function
+                    .as_object()
+                    .and_then(|obj| obj.get("return"));
+                let new_args = match args {
+                    Some(args_value) => {
+                        if let Some(args_array) = args_value.as_array() {
+                            args_array.to_vec()
+                        } else {
+                            Vec::new()
+                        }
+                    }
+                    None => Vec::new(),
+                };
+
+                let return_type_str = match ret_type {
+                    Some(val) => val.as_str().unwrap_or_default().to_string(),
+                    None => String::new(),
+                };
+
+                (new_args, return_type_str)
+            }
+            None => (Vec::new(), String::new()),
+        };
+
         for (i, &param) in function.ty.params().iter().enumerate() {
-            write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
+            if let Some(argument) = arguments.get(i).and_then(|arg| arg.as_object()) {
+                if let (Some(name), Some(type_str)) = (
+                    argument.get("name").and_then(Value::as_str),
+                    argument.get("type").and_then(Value::as_str),
+                ) {
+                    write!(writer, ", {}: {}", name, type_str).unwrap();
+                    continue;
+                }
+            } else {
+                write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
+            }
         }
         write!(writer, ")").unwrap();
-        for result in function.ty.results() {
-            write!(writer, " -> {}", to_rs_type(*result)).unwrap();
+        if !return_type.is_empty() {
+            write!(writer, " -> {}", return_type).unwrap();
+        }else{
+
+            for result in function.ty.results() {
+                write!(writer, " -> {}", to_rs_type(*result)).unwrap();
+            }
         }
         writeln!(writer, ";").unwrap();
     }
