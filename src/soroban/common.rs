@@ -1,9 +1,4 @@
-use std::{
-    fs::File,
-    io::{BufReader, Error as IOError},
-};
-
-use serde_json::{Error as SerdeError, Value};
+use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct ModuleFunction {
@@ -13,9 +8,8 @@ pub struct ModuleFunction {
 }
 
 fn read_env_common_from_file() -> Result<Value, Box<dyn std::error::Error>> {
-    let file = File::open("src/soroban/env.json")?;
-    let reader = BufReader::new(file);
-    serde_json::from_reader(reader).map_err(|e| e.into())
+    let file_content = include_str!("common_env_soroban.json");
+    serde_json::from_str(file_content).map_err(|e| e.into())
 }
 
 pub fn env_common_modules_result() -> Result<Vec<Value>, Box<dyn std::error::Error>> {

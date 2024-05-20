@@ -1,3 +1,4 @@
+use crate::code_builder::transform_from_soroban_val;
 use crate::precedence;
 
 #[derive(Debug)]
@@ -34,6 +35,7 @@ impl ExprBuilder {
     {
         let b = self.stack.pop().unwrap();
         let a = self.stack.pop().unwrap();
+
         let expr = f(&format(precedence, a, true), &format(precedence, b, false));
         self.stack.push((precedence, expr));
     }
@@ -138,6 +140,7 @@ impl fmt::Display for Formatted {
             || (self.is_left && self.outer_precedence == precedence::COMPARISON
                 && self.inner_precedence == precedence::AS)
         {
+
             write!(f, "({})", self.s)
         } else {
             write!(f, "{}", self.s)

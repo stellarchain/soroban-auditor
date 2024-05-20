@@ -1,5 +1,4 @@
 extern crate parity_wasm;
-#[macro_use]
 extern crate structopt;
 extern crate unicode_xid;
 extern crate unidecode;
@@ -7,10 +6,8 @@ extern crate unidecode;
 use crate::soroban::contract::find_function_specs;
 use parity_wasm::deserialize_file;
 use parity_wasm::elements::{
-    External, FunctionType, ImportCountType, Instruction, Internal, NameSection, Section, Type,
-    ValueType,
+    External, FunctionType, ImportCountType, Instruction, Internal, Section, Type, ValueType,
 };
-use quote::{format_ident, quote};
 use serde_json::Value;
 use soroban::common::{env_common_modules_result, take_common_module, take_common_module_by_name};
 use soroban::contract::{read_contract_specs, FunctionContractSpec};
@@ -194,8 +191,8 @@ fn main() {
     let fns = module.function_section().unwrap();
     let types = module.type_section().unwrap();
     let exports = module.export_section().unwrap();
+
     //name sections
-    //
     let function_names = module
         .sections()
         .iter()
@@ -269,75 +266,84 @@ fn main() {
         "#![no_std]
 use soroban_sdk::{{contract, contractimpl, contracttype, token, Address, Env, Vec}};
 
-pub trait Imports {{
-    type Memory: Memory;"
+#[contract]
+pub struct Contract;"
     )
     .unwrap();
 
-    for function in &functions[..import_count] {
-        write!(
-            writer,
-            "    fn {}(&mut self, context: &mut Context<Self::Memory>",
-            function.name
-        )
-        .unwrap();
+    let verbose = false;
+    let mut indirect_fns = BTreeMap::new();
+    let contract_specs = match read_contract_specs(&input) {
+        Ok(spec_fns_result) => spec_fns_result,
+        Err(_err) => Vec::new(),
+    };
 
-        let module_import = take_common_module_by_name(
-            &modules,
-            function.module_name.as_str(),
-            function.name.as_str(),
-        );
+    if verbose {
+        for function in &functions[..import_count] {
+            write!(
+                writer,
+                "    fn {}(&mut self, context: &mut Context<Self::Memory>",
+                function.name
+            )
+            .unwrap();
 
-        let (arguments, return_type) = match module_import {
-            Some(module) => {
-                let args = module.function.as_object().and_then(|obj| obj.get("args"));
-                let ret_type = module
-                    .function
-                    .as_object()
-                    .and_then(|obj| obj.get("return"));
-                let new_args = match args {
-                    Some(args_value) => {
-                        if let Some(args_array) = args_value.as_array() {
-                            args_array.to_vec()
-                        } else {
-                            Vec::new()
+            let module_import = take_common_module_by_name(
+                &modules,
+                function.module_name.as_str(),
+                function.name.as_str(),
+            );
+
+            let (arguments, return_type) = match module_import {
+                Some(module) => {
+                    let args = module.function.as_object().and_then(|obj| obj.get("args"));
+                    let ret_type = module
+                        .function
+                        .as_object()
+                        .and_then(|obj| obj.get("return"));
+                    let new_args = match args {
+                        Some(args_value) => {
+                            if let Some(args_array) = args_value.as_array() {
+                                args_array.to_vec()
+                            } else {
+                                Vec::new()
+                            }
                         }
-                    }
-                    None => Vec::new(),
-                };
+                        None => Vec::new(),
+                    };
 
-                let return_type_str = match ret_type {
-                    Some(val) => val.as_str().unwrap_or_default().to_string(),
-                    None => String::new(),
-                };
+                    let return_type_str = match ret_type {
+                        Some(val) => val.as_str().unwrap_or_default().to_string(),
+                        None => String::new(),
+                    };
 
-                (new_args, return_type_str)
-            }
-            None => (Vec::new(), String::new()),
-        };
-
-        for (i, &param) in function.ty.params().iter().enumerate() {
-            if let Some(argument) = arguments.get(i).and_then(|arg| arg.as_object()) {
-                if let (Some(name), Some(type_str)) = (
-                    argument.get("name").and_then(Value::as_str),
-                    argument.get("type").and_then(Value::as_str),
-                ) {
-                    write!(writer, ", {}: {}", name, type_str).unwrap();
-                    continue;
+                    (new_args, return_type_str)
                 }
+                None => (Vec::new(), String::new()),
+            };
+
+            for (i, &param) in function.ty.params().iter().enumerate() {
+                if let Some(argument) = arguments.get(i).and_then(|arg| arg.as_object()) {
+                    if let (Some(name), Some(type_str)) = (
+                        argument.get("name").and_then(Value::as_str),
+                        argument.get("type").and_then(Value::as_str),
+                    ) {
+                        write!(writer, ", {}: {}", name, type_str).unwrap();
+                        continue;
+                    }
+                } else {
+                    write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
+                }
+            }
+            write!(writer, ")").unwrap();
+            if !return_type.is_empty() {
+                write!(writer, " -> {}", return_type).unwrap();
             } else {
-                write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
+                for result in function.ty.results() {
+                    write!(writer, " -> {}", to_rs_type(*result)).unwrap();
+                }
             }
+            writeln!(writer, ";").unwrap();
         }
-        write!(writer, ")").unwrap();
-        if !return_type.is_empty() {
-            write!(writer, " -> {}", return_type).unwrap();
-        } else {
-            for result in function.ty.results() {
-                write!(writer, " -> {}", to_rs_type(*result)).unwrap();
-            }
-        }
-        writeln!(writer, ";").unwrap();
     }
 
     let mut globals = Vec::new();
@@ -388,63 +394,6 @@ pub trait Imports {{
         }
     }
 
-    for global in &globals[..imported_globals_count] {
-        // if global.is_mutable {
-        writeln!(
-            writer,
-            "    fn {}(&mut self, context: &mut Context<Self::Memory>) -> &mut {};",
-            global.name, global.ty
-        )
-        .unwrap();
-        // } else {
-        //     writeln!(writer, "    const {}: {};", global.name, global.ty);
-        // }
-    }
-
-    writeln!(
-        writer,
-        "{}",
-        r#"}
-
-pub trait Memory {
-    fn load8(&mut self, addr: usize) -> u8;
-    fn load16(&mut self, addr: usize) -> u16;
-    fn load32(&mut self, addr: usize) -> u32;
-    fn load64(&mut self, addr: usize) -> u64;
-
-    fn store8(&mut self, addr: usize, val: u8);
-    fn store16(&mut self, addr: usize, val: u16);
-    fn store32(&mut self, addr: usize, val: u32);
-    fn store64(&mut self, addr: usize, val: u64);
-
-    fn store_slice(&mut self, addr: usize, val: &'static [u8]);
-
-    fn grow(&mut self, pages: usize) -> i32;
-    fn size(&mut self) -> i32;
-}
-
-#[contract]
-pub struct Contract<I: Imports<Memory = M>, M: Memory> {
-    pub imports: I,
-    pub context: Context<M>,
-}
-
-#[contracttype]
-pub struct Context<M: Memory> {
-    pub memory: M,"#
-    )
-    .unwrap();
-
-    for global in &globals[imported_globals_count..] {
-        if global.is_mutable {
-            write!(writer, "    ").unwrap();
-            if global.is_pub {
-                write!(writer, "pub ").unwrap();
-            }
-            writeln!(writer, "{}: {},", global.name, global.ty).unwrap();
-        }
-    }
-
     let mut has_dynamic_element_section_offset = false;
     if let Some(entry) = module.elements_section().and_then(|e| e.entries().get(0)) {
         let const_expr = entry.offset().as_ref().unwrap().code();
@@ -454,319 +403,372 @@ pub struct Context<M: Memory> {
         }
     }
 
-    if globals[imported_globals_count..]
-        .iter()
-        .any(|g| !g.is_mutable)
-    {
+    if verbose {
+        for global in &globals[..imported_globals_count] {
+            // if global.is_mutable {
+            writeln!(
+                writer,
+                "    fn {}(&mut self, context: &mut Context<Self::Memory>) -> &mut {};",
+                global.name, global.ty
+            )
+            .unwrap();
+            // } else {
+            //     writeln!(writer, "    const {}: {};", global.name, global.ty);
+            // }
+        }
+
         writeln!(
             writer,
             "{}",
             r#"}
 
-#[contracttype]
-pub mod Consts {"#
+    pub trait Memory {
+        fn load8(&mut self, addr: usize) -> u8;
+        fn load16(&mut self, addr: usize) -> u16;
+        fn load32(&mut self, addr: usize) -> u32;
+        fn load64(&mut self, addr: usize) -> u64;
+
+        fn store8(&mut self, addr: usize, val: u8);
+        fn store16(&mut self, addr: usize, val: u16);
+        fn store32(&mut self, addr: usize, val: u32);
+        fn store64(&mut self, addr: usize, val: u64);
+
+        fn store_slice(&mut self, addr: usize, val: &'static [u8]);
+
+        fn grow(&mut self, pages: usize) -> i32;
+        fn size(&mut self) -> i32;
+    }
+
+    #[contract]
+    pub struct Contract<I: Imports<Memory = M>, M: Memory> {
+        pub imports: I,
+        pub context: Context<M>,
+    }
+
+    #[contracttype]
+    pub struct Context<M: Memory> {
+        pub memory: M,"#
         )
         .unwrap();
 
         for global in &globals[imported_globals_count..] {
-            if !global.is_mutable {
-                write!(writer, "    pub").unwrap();
-                if !global.is_pub {
-                    write!(writer, "(super)").unwrap();
+            if global.is_mutable {
+                write!(writer, "    ").unwrap();
+                if global.is_pub {
+                    write!(writer, "pub ").unwrap();
                 }
-                write!(writer, " const {}: {} = ", global.name, global.ty).unwrap();
-                write_const_expr(
-                    &mut writer,
-                    global.const_expr,
-                    &globals,
-                    imported_globals_count,
-                    "",
-                    "",
-                    "",
-                );
-                writeln!(writer, ";").unwrap();
+                writeln!(writer, "{}: {},", global.name, global.ty).unwrap();
             }
         }
-    }
 
-    writeln!(
-        writer,
-        "{}",
-        r#"}
+        if globals[imported_globals_count..]
+            .iter()
+            .any(|g| !g.is_mutable)
+        {
+            writeln!(
+                writer,
+                "{}",
+                r#"}
 
-#[contractimpl]
-impl<I: Imports<Memory = M>, M: Memory> Contract<I, M> {
-    pub fn new(imports: I, mut memory: M) -> Self {"#
-    )
-    .unwrap();
+    #[contracttype]
+    pub mod Consts {"#
+            )
+            .unwrap();
 
-    if let Some(memory) = module.memory_section().and_then(|m| m.entries().first()) {
+            for global in &globals[imported_globals_count..] {
+                if !global.is_mutable {
+                    write!(writer, "    pub").unwrap();
+                    if !global.is_pub {
+                        write!(writer, "(super)").unwrap();
+                    }
+                    write!(writer, " const {}: {} = ", global.name, global.ty).unwrap();
+                    write_const_expr(
+                        &mut writer,
+                        global.const_expr,
+                        &globals,
+                        imported_globals_count,
+                        "",
+                        "",
+                        "",
+                    );
+                    writeln!(writer, ";").unwrap();
+                }
+            }
+        }
+
         writeln!(
             writer,
-            r#"        let current_pages = memory.size() as usize;
-        if current_pages < {0} {{
-            memory.grow({0} - current_pages);
-            assert_eq!(memory.size(), {0}, "Not enough memory pages allocated");
-        }}"#,
-            memory.limits().initial()
+            "{}",
+            r#"}
+
+#[contractimpl]
+impl Contract {"#
         )
         .unwrap();
-    }
+        if let Some(memory) = module.memory_section().and_then(|m| m.entries().first()) {
+            writeln!(
+                writer,
+                r#"pub fn new(imports: I, mut memory: M) -> Self {{
+            let current_pages = memory.size() as usize;
+            if current_pages < {0} {{
+                memory.grow({0} - current_pages);
+                assert_eq!(memory.size(), {0}, "Not enough memory pages allocated");
+            }}"#,
+                memory.limits().initial()
+            )
+            .unwrap();
+        }
 
-    writeln!(
-        writer,
-        "{}",
-        r#"        let mut instance = Self {
-            imports,
-            context: Context {
-                memory,"#
-    )
-    .unwrap();
+        writeln!(
+            writer,
+            "{}",
+            r#"        let mut instance = Self {
+                imports,
+                context: Context {
+                    memory,"#
+        )
+        .unwrap();
 
-    for global in &globals[imported_globals_count..] {
-        if global.is_mutable {
-            write!(writer, "                {}: ", global.name).unwrap();
-            if is_const_expr_immutable_instead_of_const(global.const_expr) {
-                write!(writer, "Default::default()").unwrap();
-            } else {
+        for global in &globals[imported_globals_count..] {
+            if global.is_mutable {
+                write!(writer, "                {}: ", global.name).unwrap();
+                if is_const_expr_immutable_instead_of_const(global.const_expr) {
+                    write!(writer, "Default::default()").unwrap();
+                } else {
+                    write_const_expr(
+                        &mut writer,
+                        global.const_expr,
+                        &globals,
+                        imported_globals_count,
+                        "consts::",
+                        "",
+                        "",
+                    );
+                }
+                writeln!(writer, ",").unwrap();
+            }
+        }
+
+        if has_dynamic_element_section_offset {
+            writeln!(writer, "                element_section_offset: 0,").unwrap();
+        }
+
+        writeln!(
+            writer,
+            "{}",
+            r#"            },
+            };"#
+        )
+        .unwrap();
+
+        for global in &globals[imported_globals_count..] {
+            if global.is_mutable && is_const_expr_immutable_instead_of_const(global.const_expr) {
+                write!(writer, "        instance.context.{} = ", global.name).unwrap();
                 write_const_expr(
                     &mut writer,
                     global.const_expr,
                     &globals,
                     imported_globals_count,
                     "consts::",
-                    "",
-                    "",
+                    "instance.imports",
+                    "&mut instance.context",
                 );
+                writeln!(writer, ";").unwrap();
             }
-            writeln!(writer, ",").unwrap();
         }
-    }
 
-    if has_dynamic_element_section_offset {
-        writeln!(writer, "                element_section_offset: 0,").unwrap();
-    }
-
-    writeln!(
-        writer,
-        "{}",
-        r#"            },
-        };"#
-    )
-    .unwrap();
-
-    for global in &globals[imported_globals_count..] {
-        if global.is_mutable && is_const_expr_immutable_instead_of_const(global.const_expr) {
-            write!(writer, "        instance.context.{} = ", global.name).unwrap();
-            write_const_expr(
-                &mut writer,
-                global.const_expr,
-                &globals,
-                imported_globals_count,
-                "consts::",
-                "instance.imports",
-                "&mut instance.context",
-            );
-            writeln!(writer, ";").unwrap();
-        }
-    }
-
-    let mut indirect_fns = BTreeMap::new();
-
-    if let Some(entry) = module.elements_section().and_then(|e| e.entries().get(0)) {
-        let const_expr = entry.offset().as_ref().unwrap().code();
-        let offset = if has_dynamic_element_section_offset {
-            write!(writer, "        instance.context.element_section_offset = ").unwrap();
-            write_const_expr(
-                &mut writer,
-                const_expr,
-                &globals,
-                imported_globals_count,
-                "consts::",
-                "instance.imports",
-                "&mut instance.context",
-            );
-            writeln!(writer, ";").unwrap();
-            0
-        } else {
-            assert!(const_expr.len() == 2);
-            match const_expr[0] {
-                Instruction::I32Const(c) => c,
-                _ => panic!("Unexpected Element Section Offset {:#?}", const_expr),
-            }
-        };
-        for (fn_ptr, &fn_index) in entry.members().iter().enumerate() {
-            let type_index = functions[fn_index as usize].ty_index;
-            indirect_fns
-                .entry(type_index)
-                .or_insert_with(Vec::new)
-                .push(((fn_ptr as i32 + offset) as u32, fn_index));
-        }
-    }
-
-    if let Some(data_section) = module.data_section() {
-        for entry in data_section.entries() {
-            let offset = entry.offset().as_ref().unwrap().code();
-            assert!(offset.len() == 2);
-            if let Instruction::I32Const(c) = offset[0] {
-                if entry.value().windows(2).all(|a| a[0] == a[1]) {
-                    writeln!(
-                        writer,
-                        r#"        instance.context.memory.store_slice({}, &[{}; {}]);"#,
-                        c,
-                        entry.value().first().cloned().unwrap_or_default(),
-                        entry.value().len()
-                    )
-                    .unwrap();
-                } else {
-                    write!(
-                        writer,
-                        r#"        instance.context.memory.store_slice({}, b""#,
-                        c
-                    )
-                    .unwrap();
-                    for &b in entry.value() {
-                        match b {
-                            b'\0' => write!(writer, r#"\0"#).unwrap(),
-                            b'"' => write!(writer, r#"\""#).unwrap(),
-                            b'\\' => write!(writer, r#"\\"#).unwrap(),
-                            b'\r' => write!(writer, r#"\r"#).unwrap(),
-                            b'\n' => write!(writer, r#"\n"#).unwrap(),
-                            b'\t' => write!(writer, r#"\t"#).unwrap(),
-                            0x00..=0x7F => {
-                                write!(writer, "{}", std::char::from_u32(b as _).unwrap()).unwrap()
-                            }
-                            _ => write!(writer, r#"\x{:X}"#, b).unwrap(),
-                        }
-                    }
-                    writeln!(writer, r#"");"#,).unwrap();
-                }
+        if let Some(entry) = module.elements_section().and_then(|e| e.entries().get(0)) {
+            let const_expr = entry.offset().as_ref().unwrap().code();
+            let offset = if has_dynamic_element_section_offset {
+                write!(writer, "        instance.context.element_section_offset = ").unwrap();
+                write_const_expr(
+                    &mut writer,
+                    const_expr,
+                    &globals,
+                    imported_globals_count,
+                    "consts::",
+                    "instance.imports",
+                    "&mut instance.context",
+                );
+                writeln!(writer, ";").unwrap();
+                0
             } else {
-                panic!("Data Segment with init expression mismatch");
-            }
-        }
-    }
-
-    if let Some(start) = module.start_section() {
-        let name = &functions[start as usize].name;
-        writeln!(
-            writer,
-            "        instance.context.{}(&mut instance.imports);",
-            name
-        )
-        .unwrap();
-    }
-
-    writeln!(
-        writer,
-        "{}",
-        r#"        instance
-    }"#
-    )
-    .unwrap();
-
-    //load soroban specs
-
-    let contract_specs = match read_contract_specs(&input) {
-        Ok(spec_fns_result) => spec_fns_result,
-        Err(err) => Vec::new(),
-    };
-
-    for export in exports.entries() {
-        if let &Internal::Function(fn_index) = export.internal() {
-            let function = &functions[fn_index as usize];
-            let spec_fn = match find_function_specs(&contract_specs, export.field()) {
-                Some(spec_fn) => spec_fn,
-                None => FunctionContractSpec::default(),
+                assert!(const_expr.len() == 2);
+                match const_expr[0] {
+                    Instruction::I32Const(c) => c,
+                    _ => panic!("Unexpected Element Section Offset {:#?}", const_expr),
+                }
             };
-
-            write!(
-                writer,
-                "    pub fn {}(&mut self",
-                mangle_fn_name(export.field())
-            )
-            .unwrap();
-
-            let arguments = spec_fn.inputs();
-            for (i, &param) in function.ty.params().iter().enumerate() {
-                if let Some(argument) = arguments.get(i) {
-                    write!(writer, ", {}: {}", argument.name(), argument.type_ident()).unwrap();
-                } else {
-                    write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
-                }
+            for (fn_ptr, &fn_index) in entry.members().iter().enumerate() {
+                let type_index = functions[fn_index as usize].ty_index;
+                indirect_fns
+                    .entry(type_index)
+                    .or_insert_with(Vec::new)
+                    .push(((fn_ptr as i32 + offset) as u32, fn_index));
             }
-
-            write!(writer, ")").unwrap();
-
-            let return_type = spec_fn.output();
-
-            if let Some(argument) = return_type {
-                write!(writer, " -> {}", argument.type_ident()).unwrap();
-            } else {
-                for result in function.ty.results() {
-                    write!(writer, " -> {}", to_rs_type(*result)).unwrap();
-                }
-            }
-            writeln!(writer, " {{").unwrap();
-            write!(
-                writer,
-                "        self.context.{}(&mut self.imports",
-                function.name
-            )
-            .unwrap();
-            for (i, _) in function.ty.params().iter().enumerate() {
-                if let Some(argument) = arguments.get(i) {
-                    write!(writer, ", {}", argument.name()).unwrap();
-                } else {
-                    write!(writer, ", var{}", i).unwrap();
-                }
-            }
-            writeln!(writer, ")").unwrap();
-            writeln!(writer, "    }}").unwrap();
         }
-    }
 
-    if opt.public_call_indirect {
-        for (&type_index, _) in &indirect_fns {
-            let Type::Function(ref fn_type) = types.types()[type_index as usize];
-            let fn_name = call_indirect_name(fn_type);
-            write!(writer, "    pub fn {}", fn_name).unwrap();
-            write!(writer, "(&mut self, ptr: i32").unwrap();
-            for (i, &param) in fn_type.params().iter().enumerate() {
-                write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
+        if let Some(data_section) = module.data_section() {
+            for entry in data_section.entries() {
+                let offset = entry.offset().as_ref().unwrap().code();
+                assert!(offset.len() == 2);
+                if let Instruction::I32Const(c) = offset[0] {
+                    if entry.value().windows(2).all(|a| a[0] == a[1]) {
+                        writeln!(
+                            writer,
+                            r#"        instance.context.memory.store_slice({}, &[{}; {}]);"#,
+                            c,
+                            entry.value().first().cloned().unwrap_or_default(),
+                            entry.value().len()
+                        )
+                        .unwrap();
+                    } else {
+                        write!(
+                            writer,
+                            r#"        instance.context.memory.store_slice({}, b""#,
+                            c
+                        )
+                        .unwrap();
+                        for &b in entry.value() {
+                            match b {
+                                b'\0' => write!(writer, r#"\0"#).unwrap(),
+                                b'"' => write!(writer, r#"\""#).unwrap(),
+                                b'\\' => write!(writer, r#"\\"#).unwrap(),
+                                b'\r' => write!(writer, r#"\r"#).unwrap(),
+                                b'\n' => write!(writer, r#"\n"#).unwrap(),
+                                b'\t' => write!(writer, r#"\t"#).unwrap(),
+                                0x00..=0x7F => {
+                                    write!(writer, "{}", std::char::from_u32(b as _).unwrap())
+                                        .unwrap()
+                                }
+                                _ => write!(writer, r#"\x{:X}"#, b).unwrap(),
+                            }
+                        }
+                        writeln!(writer, r#"");"#,).unwrap();
+                    }
+                } else {
+                    panic!("Data Segment with init expression mismatch");
+                }
             }
-            write!(writer, ")").unwrap();
-            for result in fn_type.results() {
-                write!(writer, " -> {}", to_rs_type(*result)).unwrap();
-            }
-            write!(
-                writer,
-                " {{
-        self.context.{}(&mut self.imports, ptr",
-                fn_name
-            )
-            .unwrap();
-            for (i, _) in fn_type.params().iter().enumerate() {
-                write!(writer, ", var{}", i).unwrap();
-            }
+        }
+
+        if let Some(start) = module.start_section() {
+            let name = &functions[start as usize].name;
             writeln!(
                 writer,
-                r#")
-    }}"#
+                "        instance.context.{}(&mut instance.imports);",
+                name
             )
             .unwrap();
         }
+
+        writeln!(
+            writer,
+            "{}",
+            r#"        instance
+        }"#
+        )
+        .unwrap();
+
+        for export in exports.entries() {
+            if let &Internal::Function(fn_index) = export.internal() {
+                let function = &functions[fn_index as usize];
+                let spec_fn = match find_function_specs(&contract_specs, export.field()) {
+                    Some(spec_fn) => spec_fn,
+                    None => FunctionContractSpec::default(),
+                };
+
+                write!(
+                    writer,
+                    "    pub fn {}(&mut self",
+                    mangle_fn_name(export.field())
+                )
+                .unwrap();
+
+                let arguments = spec_fn.inputs();
+                for (i, &param) in function.ty.params().iter().enumerate() {
+                    if let Some(argument) = arguments.get(i) {
+                        write!(writer, ", {}: {}", argument.name(), argument.type_ident()).unwrap();
+                    } else {
+                        write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
+                    }
+                }
+
+                write!(writer, ")").unwrap();
+
+                let return_type = spec_fn.output();
+
+                if let Some(argument) = return_type {
+                    write!(writer, " -> {}", argument.type_ident()).unwrap();
+                } else {
+                    for result in function.ty.results() {
+                        write!(writer, " -> {}", to_rs_type(*result)).unwrap();
+                    }
+                }
+                writeln!(writer, " {{").unwrap();
+                write!(
+                    writer,
+                    "        self.context.{}(&mut self.imports",
+                    function.name
+                )
+                .unwrap();
+                for (i, _) in function.ty.params().iter().enumerate() {
+                    if let Some(argument) = arguments.get(i) {
+                        write!(writer, ", {}", argument.name()).unwrap();
+                    } else {
+                        write!(writer, ", var{}", i).unwrap();
+                    }
+                }
+                writeln!(writer, ")").unwrap();
+                writeln!(writer, "    }}").unwrap();
+            }
+        }
+
+        if opt.public_call_indirect {
+            for (&type_index, _) in &indirect_fns {
+                let Type::Function(ref fn_type) = types.types()[type_index as usize];
+                let fn_name = call_indirect_name(fn_type);
+                write!(writer, "    pub fn {}", fn_name).unwrap();
+                write!(writer, "(&mut self, ptr: i32").unwrap();
+                for (i, &param) in fn_type.params().iter().enumerate() {
+                    write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
+                }
+                write!(writer, ")").unwrap();
+                for result in fn_type.results() {
+                    write!(writer, " -> {}", to_rs_type(*result)).unwrap();
+                }
+                write!(
+                    writer,
+                    " {{
+            self.context.{}(&mut self.imports, ptr",
+                    fn_name
+                )
+                .unwrap();
+                for (i, _) in fn_type.params().iter().enumerate() {
+                    write!(writer, ", var{}", i).unwrap();
+                }
+                writeln!(
+                    writer,
+                    r#")
+        }}"#
+                )
+                .unwrap();
+            }
+        }
     }
 
+    //Contract function bodies
     writeln!(
         writer,
         "{}",
-        r#"}
+        r#"
 
-impl<M: Memory> Context<M> {"#
+#[contractimpl]
+impl Contract {"#
     )
     .unwrap();
 
+    //TODO write the body in same function
     for export in exports.entries() {
         if let &Internal::Function(fn_index) = export.internal() {
             let function = &mut functions[fn_index as usize];
@@ -780,7 +782,7 @@ impl<M: Memory> Context<M> {"#
             }
             write!(
                 writer,
-                "    pub fn {}<I: Imports<Memory = M>>(&mut self, imports: &mut I",
+                "    pub fn {}(&mut self",
                 mangle_fn_name(export.field())
             )
             .unwrap();
@@ -802,7 +804,7 @@ impl<M: Memory> Context<M> {"#
                 }
             }
             writeln!(writer, " {{").unwrap();
-            write!(writer, "        self.{}(imports", function.name).unwrap();
+            write!(writer, "        self.{}(&self", function.name).unwrap();
             for (i, _) in function.ty.params().iter().enumerate() {
                 if let Some(argument) = arguments.get(i) {
                     write!(writer, ", {}", argument.name()).unwrap();
@@ -833,7 +835,7 @@ impl<M: Memory> Context<M> {"#
         }
         write!(
             writer,
-            "fn {}<I: Imports<Memory = M>>(&mut self, imports: &mut I",
+            "fn {}(&mut self",
             function.name
         )
         .unwrap();
@@ -874,73 +876,74 @@ impl<M: Memory> Context<M> {"#
             body.code().elements(),
             2,
             &contract_specs,
-            fn_index
+            fn_index,
         );
     }
 
-    for (type_index, fns) in indirect_fns {
-        let Type::Function(ref fn_type) = types.types()[type_index as usize];
-        write!(writer, "    ").unwrap();
-        if opt.public_call_indirect {
-            write!(writer, "pub ").unwrap();
-        }
-        write!(
-            writer,
-            "fn {}<I: Imports<Memory = M>>",
-            call_indirect_name(fn_type),
-        )
-        .unwrap();
-        write!(writer, "(&mut self, imports: &mut I, ptr: i32").unwrap();
-        for (i, &param) in fn_type.params().iter().enumerate() {
-            write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
-        }
-        write!(writer, ")").unwrap();
-        for result in fn_type.results() {
-            write!(writer, " -> {}", to_rs_type(*result)).unwrap();
-        }
-        write!(
-            writer,
-            " {{
-        match ptr"
-        )
-        .unwrap();
-        if has_dynamic_element_section_offset {
-            write!(writer, " - self.element_section_offset").unwrap();
-        }
-        writeln!(writer, " {{").unwrap();
-        for (fn_ptr, fn_index) in fns {
-            let function = &functions[fn_index as usize];
-            write!(writer, "            {} => ", fn_ptr).unwrap();
-            let is_imported = (fn_index as usize) < import_count;
-            if is_imported {
-                write!(writer, "imports.").unwrap();
-            } else {
-                write!(writer, "self.").unwrap();
+    if verbose {
+        for (type_index, fns) in indirect_fns {
+            let Type::Function(ref fn_type) = types.types()[type_index as usize];
+            write!(writer, "    ").unwrap();
+            if opt.public_call_indirect {
+                write!(writer, "pub ").unwrap();
             }
-            write!(writer, "{}(", function.name).unwrap();
-            if is_imported {
-                write!(writer, "self").unwrap();
-            } else {
-                write!(writer, "imports").unwrap();
+            write!(
+                writer,
+                "fn {}",
+                call_indirect_name(fn_type),
+            )
+            .unwrap();
+            write!(writer, "(&mut self, ptr: i32").unwrap();
+            for (i, &param) in fn_type.params().iter().enumerate() {
+                write!(writer, ", var{}: {}", i, to_rs_type(param)).unwrap();
             }
-            for i in 0..function.ty.params().len() {
-                write!(writer, ", var{}", i).unwrap();
+            write!(writer, ")").unwrap();
+            for result in fn_type.results() {
+                write!(writer, " -> {}", to_rs_type(*result)).unwrap();
             }
-            if let Some(real_name) = function.real_name {
-                writeln!(writer, "), // {}", real_name).unwrap();
-            } else {
-                writeln!(writer, "),").unwrap();
+            write!(
+                writer,
+                " {{
+            match ptr"
+            )
+            .unwrap();
+            if has_dynamic_element_section_offset {
+                write!(writer, " - self.element_section_offset").unwrap();
             }
+            writeln!(writer, " {{").unwrap();
+            for (fn_ptr, fn_index) in fns {
+                let function = &functions[fn_index as usize];
+                write!(writer, "            {} => ", fn_ptr).unwrap();
+                let is_imported = (fn_index as usize) < import_count;
+                if is_imported {
+                    write!(writer, "imports.").unwrap();
+                } else {
+                    write!(writer, "self.").unwrap();
+                }
+                write!(writer, "{}(", function.name).unwrap();
+                if is_imported {
+                    write!(writer, "self").unwrap();
+                } else {
+                    write!(writer, "imports").unwrap();
+                }
+                for i in 0..function.ty.params().len() {
+                    write!(writer, ", var{}", i).unwrap();
+                }
+                if let Some(real_name) = function.real_name {
+                    writeln!(writer, "), // {}", real_name).unwrap();
+                } else {
+                    writeln!(writer, "),").unwrap();
+                }
+            }
+            writeln!(
+                writer,
+                r#"            _ => panic!("Invalid Function Pointer"),
+            }}
+        }}"#
+            )
+            .unwrap();
         }
-        writeln!(
-            writer,
-            r#"            _ => panic!("Invalid Function Pointer"),
-        }}
-    }}"#
-        )
-        .unwrap();
     }
-
     writeln!(writer, "}}").unwrap();
 }
 

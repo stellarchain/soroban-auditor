@@ -1,10 +1,19 @@
 use crate::find_function_specs;
+use crate::reorder_analysis::can_local_be_reordered;
+use crate::{call_indirect_name, precedence, to_rs_type, BlockKind, Function, Global, Indentation};
 use crate::{expr_builder::ExprBuilder, soroban::contract::FunctionContractSpec};
 use parity_wasm::elements::{BlockType, Instruction, Type, TypeSection};
-use crate::reorder_analysis::can_local_be_reordered;
+use regex::Regex;
+use soroban_sdk::Val;
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::io::Write;
-use crate::{call_indirect_name, precedence, to_rs_type, BlockKind, Function, Global, Indentation};
+
+const DAY_IN_LEDGERS: u32 = 17280;
+const INSTANCE_BUMP_AMOUNT: u32 = 7 * DAY_IN_LEDGERS;
+const INSTANCE_LIFETIME_THRESHOLD: u32 = INSTANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
+const BALANCE_BUMP_AMOUNT: u32 = 30 * DAY_IN_LEDGERS;
+const BALANCE_LIFETIME_THRESHOLD: u32 = BALANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
 
 fn is_breakable_if(remaining_ops: &[Instruction]) -> bool {
     let mut stack = 0;
@@ -35,6 +44,47 @@ fn is_breakable_if(remaining_ops: &[Instruction]) -> bool {
         }
     }
     panic!("Unclosed block")
+}
+
+pub fn transform_from_soroban_val(val: u64) -> String {
+    let mut fmt = format!("{}", val);
+    let v = Val::from_payload(val);
+    if v.is_good() {
+        fmt = format!("{:?}", v);
+        let re = Regex::new(r"\((?<value>\w+)\)").unwrap();
+        if let Some(captures) = re.captures(fmt.as_str()) {
+            if let Some(value) = captures.get(1) {
+                fmt = format!("{}", value.as_str());
+            }
+        }
+        replace_format_string(&mut fmt);
+    }
+    fmt
+}
+fn replace_format_string(t: &mut String) {
+    let mut replacements = HashMap::new();
+    replacements.insert(
+        format!("{}", INSTANCE_LIFETIME_THRESHOLD),
+        "INSTANCE_LIFETIME_THRESHOLD".to_string(),
+    );
+    replacements.insert(
+        format!("{}", BALANCE_BUMP_AMOUNT),
+        "BALANCE_BUMP_AMOUNT".to_string(),
+    );
+    replacements.insert(
+        format!("{}", BALANCE_LIFETIME_THRESHOLD),
+        "BALANCE_LIFETIME_THRESHOLD".to_string(),
+    );
+    replacements.insert(
+        format!("{}", INSTANCE_BUMP_AMOUNT),
+        "INSTANCE_BUMP_AMOUNT".to_string(),
+    );
+    for (format_string, replacement) in &replacements {
+        if *t == *format_string {
+            *t = replacement.clone();
+            break; // Exit the loop once a match is found
+        }
+    }
 }
 
 pub fn build<W: Write>(
@@ -84,7 +134,8 @@ pub fn build<W: Write>(
                         indentation,
                         var_name,
                         to_rs_type(ty)
-                    ).unwrap();
+                    )
+                    .unwrap();
                     expr_index += 1;
                     Some(var_name)
                 } else {
@@ -108,7 +159,8 @@ pub fn build<W: Write>(
                         indentation,
                         var_name,
                         to_rs_type(ty)
-                    ).unwrap();
+                    )
+                    .unwrap();
                     expr_index += 1;
                     Some(var_name)
                 } else {
@@ -132,7 +184,8 @@ pub fn build<W: Write>(
                         indentation,
                         var_name,
                         to_rs_type(ty)
-                    ).unwrap();
+                    )
+                    .unwrap();
                     expr_index += 1;
                     Some(var_name)
                 } else {
@@ -300,7 +353,8 @@ pub fn build<W: Write>(
                                 indentation,
                                 dst_var.as_ref().unwrap(),
                                 tmp_var,
-                            ).unwrap();
+                            )
+                            .unwrap();
                         }
                         writeln!(writer, "{}break 'label{};", indentation, label).unwrap();
                     }
@@ -342,7 +396,8 @@ pub fn build<W: Write>(
                                 writer,
                                 "{}{} => continue 'label{},",
                                 indentation, index, label
-                            ).unwrap();
+                            )
+                            .unwrap();
                         }
                         BlockKind::Function { .. } => {
                             writeln!(writer, "{}_ => return,", indentation).unwrap();
@@ -427,7 +482,8 @@ pub fn build<W: Write>(
                     "self.{}(imports, {}",
                     call_indirect_name(fn_type),
                     fn_ptr
-                ).unwrap();
+                )
+                .unwrap();
                 let index = expr_builder.len() - fn_type.params().len();
                 for (_, expr) in expr_builder.inner().drain(index..) {
                     write!(writer, ", {}", expr).unwrap();
@@ -470,11 +526,12 @@ pub fn build<W: Write>(
                     prefix = "arg";
                 }
                 if can_local_be_reordered(i, &blocks, functions, types, code.as_slice()) {
-                    let spec_fn = match find_function_specs(&contract_specs, current_func.name.as_str()) {
-                        Some(spec_fn) => spec_fn,
-                        None => FunctionContractSpec::default(),
-                    };
-                    let arguments  = spec_fn.inputs();
+                    let spec_fn =
+                        match find_function_specs(&contract_specs, current_func.name.as_str()) {
+                            Some(spec_fn) => spec_fn,
+                            None => FunctionContractSpec::default(),
+                        };
+                    let arguments = spec_fn.inputs();
                     let mut dst = format!("{}{}", prefix, i);
                     if let Some(argument) = arguments.get(i as usize) {
                         dst = format!("argument_{}", argument);
@@ -514,7 +571,8 @@ pub fn build<W: Write>(
                         writer,
                         "{}let {} = *imports.{}(self);",
                         indentation, dst, name
-                    ).unwrap();
+                    )
+                    .unwrap();
                     expr_index += 1;
                     expr_builder.push((precedence::PATH, dst));
                 } else if global.is_mutable {
@@ -550,7 +608,8 @@ pub fn build<W: Write>(
                     } else {
                         String::new()
                     }
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                 expr_index += 1;
             }
@@ -567,7 +626,8 @@ pub fn build<W: Write>(
                     } else {
                         String::new()
                     }
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                 expr_index += 1;
             }
@@ -584,7 +644,8 @@ pub fn build<W: Write>(
                     } else {
                         String::new()
                     }
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                 expr_index += 1;
             }
@@ -601,7 +662,8 @@ pub fn build<W: Write>(
                     } else {
                         String::new()
                     }
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                 expr_index += 1;
             }
@@ -618,7 +680,8 @@ pub fn build<W: Write>(
                     } else {
                         String::new()
                     }
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                 expr_index += 1;
             }
@@ -635,7 +698,8 @@ pub fn build<W: Write>(
                     } else {
                         String::new()
                     }
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                 expr_index += 1;
             }
@@ -652,7 +716,8 @@ pub fn build<W: Write>(
                     } else {
                         String::new()
                     }
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                 expr_index += 1;
             }
@@ -669,7 +734,8 @@ pub fn build<W: Write>(
                     } else {
                         String::new()
                     }
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                 expr_index += 1;
             }
@@ -686,7 +752,8 @@ pub fn build<W: Write>(
                     } else {
                         String::new()
                     }
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                 expr_index += 1;
             }
@@ -703,7 +770,8 @@ pub fn build<W: Write>(
                     } else {
                         String::new()
                     }
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                 expr_index += 1;
             }
@@ -720,7 +788,8 @@ pub fn build<W: Write>(
                     } else {
                         String::new()
                     }
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                 expr_index += 1;
             }
@@ -737,7 +806,8 @@ pub fn build<W: Write>(
                     } else {
                         String::new()
                     }
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                 expr_index += 1;
             }
@@ -754,7 +824,8 @@ pub fn build<W: Write>(
                     } else {
                         String::new()
                     }
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                 expr_index += 1;
             }
@@ -771,7 +842,8 @@ pub fn build<W: Write>(
                     } else {
                         String::new()
                     }
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                 expr_index += 1;
             }
@@ -789,7 +861,8 @@ pub fn build<W: Write>(
                         String::new()
                     },
                     value
-                ).unwrap();
+                )
+                .unwrap();
             }
             I64Store(_log_align, offset) => {
                 let value = expr_builder.pop_formatted(precedence::AS).unwrap();
@@ -805,7 +878,8 @@ pub fn build<W: Write>(
                         String::new()
                     },
                     value
-                ).unwrap();
+                )
+                .unwrap();
             }
             F32Store(_log_align, offset) => {
                 let value = expr_builder.pop_formatted(precedence::METHOD_CALL).unwrap();
@@ -821,7 +895,8 @@ pub fn build<W: Write>(
                         String::new()
                     },
                     value
-                ).unwrap();
+                )
+                .unwrap();
             }
             F64Store(_log_align, offset) => {
                 let value = expr_builder.pop_formatted(precedence::METHOD_CALL).unwrap();
@@ -837,7 +912,8 @@ pub fn build<W: Write>(
                         String::new()
                     },
                     value
-                ).unwrap();
+                )
+                .unwrap();
             }
             I32Store8(_log_align, offset) => {
                 let value = expr_builder.pop_formatted(precedence::AS).unwrap();
@@ -853,7 +929,8 @@ pub fn build<W: Write>(
                         String::new()
                     },
                     value
-                ).unwrap();
+                )
+                .unwrap();
             }
             I32Store16(_log_align, offset) => {
                 let value = expr_builder.pop_formatted(precedence::AS).unwrap();
@@ -869,7 +946,8 @@ pub fn build<W: Write>(
                         String::new()
                     },
                     value
-                ).unwrap();
+                )
+                .unwrap();
             }
             I64Store8(_log_align, offset) => {
                 let value = expr_builder.pop_formatted(precedence::AS).unwrap();
@@ -885,7 +963,8 @@ pub fn build<W: Write>(
                         String::new()
                     },
                     value
-                ).unwrap();
+                )
+                .unwrap();
             }
             I64Store16(_log_align, offset) => {
                 let value = expr_builder.pop_formatted(precedence::AS).unwrap();
@@ -901,7 +980,8 @@ pub fn build<W: Write>(
                         String::new()
                     },
                     value
-                ).unwrap();
+                )
+                .unwrap();
             }
             I64Store32(_log_align, offset) => {
                 let value = expr_builder.pop_formatted(precedence::AS).unwrap();
@@ -917,7 +997,8 @@ pub fn build<W: Write>(
                         String::new()
                     },
                     value
-                ).unwrap();
+                )
+                .unwrap();
             }
             CurrentMemory(_) => {
                 let dst = format!("var{}", expr_index);
@@ -932,7 +1013,8 @@ pub fn build<W: Write>(
                     writer,
                     "{}let {} = self.memory.grow({} as usize);",
                     indentation, dst, pages
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, dst));
                 expr_index += 1;
             }
@@ -942,7 +1024,7 @@ pub fn build<W: Write>(
                 } else {
                     precedence::PATH
                 };
-                expr_builder.push((precedence, format!("{}i32", c)));
+                expr_builder.push((precedence, format!("{}", c)));
             }
             I64Const(c) => {
                 let precedence = if c < 0 {
@@ -950,7 +1032,8 @@ pub fn build<W: Write>(
                 } else {
                     precedence::PATH
                 };
-                expr_builder.push((precedence, format!("{}i64", c)));
+                let fmt = transform_from_soroban_val(c as u64);
+                expr_builder.push((precedence, fmt));
             }
             F32Const(c) => {
                 expr_builder.push((
@@ -1435,7 +1518,8 @@ pub fn build<W: Write>(
 {0}    }}
 {0}}};",
                     indentation, expr_index, val
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                 expr_index += 1;
             }
@@ -1521,7 +1605,8 @@ pub fn build<W: Write>(
 {0}    }}
 {0}}};",
                     indentation, expr_index, val
-                ).unwrap();
+                )
+                .unwrap();
                 expr_builder.push((precedence::PATH, format!("var{}", expr_index)));
                 expr_index += 1;
             }

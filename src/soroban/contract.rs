@@ -9,8 +9,9 @@ use soroban_spec_rust::types::generate_union;
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
-use stellar_xdr::curr::ScSpecEntry;
-use stellar_xdr::curr::ScSpecTypeDef;
+use soroban_sdk::xdr::ScSpecEntry;
+use soroban_sdk::xdr::ScSpecTypeDef;
+
 #[derive(Clone)]
 pub struct FunctionSpecResults {
     type_ident: TokenStream,
@@ -175,7 +176,7 @@ pub fn read_contract_specs<P: AsRef<::std::path::Path>>(
             }
         }
     }
-    let spec_entries = (
+    let _spec_entries = (
         &spec_fns,
         spec_structs,
         spec_unions,
