@@ -173,7 +173,6 @@ fn main() {
     let opt = Opt::from_args();
     let input = opt.input;
     let output = opt.output.unwrap_or_else(|| input.with_extension("rs"));
-
     let modules = match env_common_modules_result() {
         Ok(modules) => modules,
         Err(err) => {
