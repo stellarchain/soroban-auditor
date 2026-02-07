@@ -1,6 +1,6 @@
-use crate::find_function_specs;
 use crate::reorder_analysis::can_local_be_reordered;
-use crate::{call_indirect_name, precedence, to_rs_type, BlockKind, Function, Global, Indentation};
+use crate::wasm_ir::{call_indirect_name, mangle_fn_name, to_rs_type, BlockKind, Function, Global, Indentation};
+use crate::precedence;
 use crate::{expr_builder::ExprBuilder, soroban::contract::FunctionContractSpec};
 use parity_wasm::elements::{BlockType, Instruction, Type, TypeSection};
 use regex::Regex;
@@ -99,7 +99,7 @@ pub fn build<W: Write>(
     types: &TypeSection,
     code: &[Instruction],
     base_indentation: usize,
-    contract_specs: &Vec<FunctionContractSpec>,
+    spec_by_fn_index: &HashMap<u32, FunctionContractSpec>,
     func_index: usize,
 ) {
     let mut expr_builder = ExprBuilder::new();
@@ -526,15 +526,11 @@ pub fn build<W: Write>(
                     prefix = "arg";
                 }
                 if can_local_be_reordered(i, &blocks, functions, types, code.as_slice()) {
-                    let spec_fn =
-                        match find_function_specs(&contract_specs, current_func.name.as_str()) {
-                            Some(spec_fn) => spec_fn,
-                            None => FunctionContractSpec::default(),
-                        };
-                    let arguments = spec_fn.inputs();
                     let mut dst = format!("{}{}", prefix, i);
-                    if let Some(argument) = arguments.get(i as usize) {
-                        dst = format!("argument_{}", argument);
+                    if let Some(spec_fn) = spec_by_fn_index.get(&(func_index as u32)) {
+                        if let Some(argument) = spec_fn.inputs().get(i as usize) {
+                            dst = mangle_fn_name(argument.name());
+                        }
                     }
                     expr_builder.push((precedence::PATH, dst));
                 } else {

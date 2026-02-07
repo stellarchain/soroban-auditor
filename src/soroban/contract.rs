@@ -1,8 +1,9 @@
-use crate::mangle_fn_name;
+use crate::wasm_ir::mangle_fn_name;
 use proc_macro2::TokenStream;
 use soroban_spec::read::from_wasm;
 use soroban_spec_rust::types::generate_enum;
 use soroban_spec_rust::types::generate_error_enum;
+use soroban_spec_rust::types::generate_event;
 use soroban_spec_rust::types::generate_struct;
 use soroban_spec_rust::types::generate_type_ident;
 use soroban_spec_rust::types::generate_union;
@@ -31,6 +32,7 @@ impl fmt::Display for FunctionSpecResults {
 #[derive(Clone)]
 pub struct FunctionSpecParam {
     name: String,
+    #[allow(dead_code)]
     spec_def: ScSpecTypeDef,
     type_ident: TokenStream,
 }
@@ -43,6 +45,7 @@ impl FunctionSpecParam {
     pub fn type_ident(&self) -> &TokenStream {
         &self.type_ident
     }
+    #[allow(dead_code)]
     pub fn spec_def(&self) -> &ScSpecTypeDef {
         &self.spec_def
     }
@@ -78,6 +81,7 @@ pub struct FunctionContractSpec {
 }
 
 impl FunctionContractSpec {
+    #[allow(dead_code)]
     pub fn default() -> Self {
         FunctionContractSpec {
             name: String::new(),
@@ -86,6 +90,7 @@ impl FunctionContractSpec {
         }
     }
 
+    #[allow(dead_code)]
     pub fn default_inputs(inputs: Vec<FunctionSpecParam>) -> Self {
         FunctionContractSpec {
             name: String::new(),
@@ -94,6 +99,7 @@ impl FunctionContractSpec {
         }
     }
 
+    #[allow(dead_code)]
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -107,8 +113,24 @@ impl FunctionContractSpec {
     }
 }
 
-pub fn find_function_specs(spec_fns_result: &Vec<FunctionContractSpec>, function_name_to_find: &str) -> Option<FunctionContractSpec> {
-     for function_info in spec_fns_result {
+#[derive(Clone, Default)]
+pub struct ContractSpecs {
+    functions: Vec<FunctionContractSpec>,
+    types: Vec<TokenStream>,
+}
+
+impl ContractSpecs {
+    pub fn functions(&self) -> &[FunctionContractSpec] {
+        &self.functions
+    }
+
+    pub fn types(&self) -> &[TokenStream] {
+        &self.types
+    }
+}
+
+pub fn find_function_specs(specs: &ContractSpecs, function_name_to_find: &str) -> Option<FunctionContractSpec> {
+     for function_info in &specs.functions {
         if function_info.name == function_name_to_find {
             return Some(function_info.clone());
         }
@@ -118,17 +140,14 @@ pub fn find_function_specs(spec_fns_result: &Vec<FunctionContractSpec>, function
 
 pub fn read_contract_specs<P: AsRef<::std::path::Path>>(
     file_path: P,
-) -> Result<Vec<FunctionContractSpec>, Box<dyn std::error::Error>> {
+) -> Result<ContractSpecs, Box<dyn std::error::Error>> {
     let mut file = File::open(file_path)?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
     let entries = from_wasm(&buffer).unwrap();
 
     let mut spec_fns = Vec::new();
-    let mut spec_structs = Vec::new();
-    let mut spec_unions = Vec::new();
-    let mut spec_enums = Vec::new();
-    let mut spec_error_enums = Vec::new();
+    let mut spec_types = Vec::new();
 
     for s in entries.iter() {
         match s {
@@ -159,29 +178,24 @@ pub fn read_contract_specs<P: AsRef<::std::path::Path>>(
                 });
             }
             ScSpecEntry::UdtStructV0(s) => {
-                let struct_info = generate_struct(s);
-                spec_structs.push(struct_info);
+                spec_types.push(generate_struct(s));
             }
             ScSpecEntry::UdtUnionV0(u) => {
-                let union_info = generate_union(u);
-                spec_unions.push(union_info);
+                spec_types.push(generate_union(u));
             }
             ScSpecEntry::UdtEnumV0(e) => {
-                let enum_info = generate_enum(e);
-                spec_enums.push(enum_info);
+                spec_types.push(generate_enum(e));
             }
             ScSpecEntry::UdtErrorEnumV0(e) => {
-                let error_enum_info = generate_error_enum(e);
-                spec_error_enums.push(error_enum_info);
+                spec_types.push(generate_error_enum(e));
+            }
+            ScSpecEntry::EventV0(e) => {
+                spec_types.push(generate_event(e));
             }
         }
     }
-    let _spec_entries = (
-        &spec_fns,
-        spec_structs,
-        spec_unions,
-        spec_enums,
-        spec_error_enums,
-    );
-    Ok(spec_fns)
+    Ok(ContractSpecs {
+        functions: spec_fns,
+        types: spec_types,
+    })
 }

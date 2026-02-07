@@ -2,7 +2,7 @@ use parity_wasm::elements::{BlockType,
                             Instruction::{self, *},
                             Type,
                             TypeSection};
-use crate::{BlockKind, Function};
+use crate::wasm_ir::{BlockKind, Function};
 
 pub fn can_local_be_reordered(
     local_to_load: u32,

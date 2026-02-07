@@ -4,6 +4,7 @@ use serde_json::Value;
 pub struct ModuleFunction {
     pub module_name: String,
     pub function_name: String,
+    #[allow(dead_code)]
     pub function: Value,
 }
 
@@ -47,6 +48,7 @@ pub fn take_common_module(modules: &[Value], module_name: &str, field_name: &str
     None
 }
 
+#[allow(dead_code)]
 pub fn take_common_module_by_name(modules: &[Value], module_name: &str, field_name: &str) -> Option<ModuleFunction> {
   for module in modules {
         if let Some(name_value) = module.get("name").and_then(Value::as_str) {
