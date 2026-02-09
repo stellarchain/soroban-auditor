@@ -26,16 +26,40 @@ impl Engine {
 
     pub fn apply(&self, input: String) -> String {
         let mut blocks = split_functions(&input);
+
+        // Apply patterns iteratively until fixpoint
+        const MAX_ITERATIONS: usize = 20;
+
         for block in &mut blocks {
             if block.body.is_empty() {
                 continue;
             }
-            for pattern in &self.patterns {
-                if let Some(new_block) = pattern.apply(block) {
-                    *block = new_block;
+
+            let mut iteration = 0;
+            loop {
+                let mut changed = false;
+                iteration += 1;
+
+                if iteration > MAX_ITERATIONS {
+                    eprintln!("Warning: Engine reached max iterations ({}) for function: {}",
+                             MAX_ITERATIONS, block.name);
+                    break;
+                }
+
+                for pattern in &self.patterns {
+                    if let Some(new_block) = pattern.apply(block) {
+                        *block = new_block;
+                        changed = true;
+                    }
+                }
+
+                if !changed {
+                    // Reached fixpoint
+                    break;
                 }
             }
         }
+
         join_functions(blocks)
     }
 }

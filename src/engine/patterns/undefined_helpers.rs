@@ -57,6 +57,13 @@ impl Pattern for UndefinedHelpersPattern {
             .body
             .iter()
             .filter_map(|line| {
+                let trimmed = line.trim();
+
+                // Skip if already has TODO comment (prevent duplicates in iterative mode)
+                if trimmed.starts_with("// TODO:") {
+                    return Some(line.clone());
+                }
+
                 if Self::is_undefined_helper_call(line) {
                     changed = true;
                     // Comment out the helper call instead of removing it
@@ -64,7 +71,7 @@ impl Pattern for UndefinedHelpersPattern {
                     let indent = line.len() - line.trim_start().len();
                     Some(format!("{}// TODO: helper function call removed: {}",
                                 " ".repeat(indent),
-                                line.trim()))
+                                trimmed))
                 } else {
                     Some(line.clone())
                 }
