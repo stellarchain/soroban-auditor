@@ -2,12 +2,15 @@ use crate::soroban::contract::FunctionContractSpec;
 use std::io::Write;
 
 mod auth;
-mod account;
+pub mod account;
 mod bytes;
 mod events;
 mod swap;
+mod storage;
 mod token;
 mod vec_string_symbol;
+
+pub mod templates;
 
 #[allow(dead_code)]
 pub struct PatternContext<'a> {
@@ -20,6 +23,7 @@ pub struct PatternContext<'a> {
     pub uses_symbol_new: bool,
     pub uses_bytes_new: bool,
     pub require_auth_calls: usize,
+    pub require_auth_for_args_calls: usize,
     pub uses_current_contract_address: bool,
     pub symbol_literals: &'a [String],
     pub string_literals: &'a [String],
@@ -38,7 +42,10 @@ pub struct PatternContext<'a> {
     pub has_spend_limit_variant: bool,
     pub has_counter_variant: bool,
     pub has_owner_variant: bool,
+    pub data_key_variants: &'a [crate::app::utils::DataKeyVariant],
+    pub struct_defs: &'a [crate::app::utils::StructDef],
     pub uses_update_current_contract_wasm: bool,
+    pub is_account_contract: bool,
 }
 
 #[derive(Default)]
@@ -77,6 +84,21 @@ pub fn try_emit<W: Write>(
         return true;
     }
     if token::try_emit_balance_allowance(writer, spec_fn, ctx) {
+        return true;
+    }
+    if storage::try_emit_setter(writer, spec_fn, ctx) {
+        return true;
+    }
+    if storage::try_emit_getter(writer, spec_fn, ctx) {
+        return true;
+    }
+    if storage::try_emit_owner_management(writer, spec_fn, ctx) {
+        return true;
+    }
+    if storage::try_emit_version(writer, spec_fn, ctx) {
+        return true;
+    }
+    if storage::try_emit_calculate_buy_sell(writer, spec_fn, ctx) {
         return true;
     }
     if bytes::try_emit(writer, spec_fn, ctx) {

@@ -7,10 +7,15 @@ mod app;
 mod code_builder;
 mod expr_builder;
 mod decompile;
+mod engine;
+mod fingerprint;
 mod format;
 mod patterns;
+mod postprocess;
+mod sdk;
 mod precedence;
 mod reorder_analysis;
+mod rewrites;
 mod soroban;
 mod wasm_ir;
 

@@ -1,5 +1,5 @@
 use crate::patterns::PatternContext;
-use crate::soroban::contract::find_function_specs;
+use crate::sdk::get_backend;
 use crate::wasm_ir::mangle_fn_name;
 use parity_wasm::elements::{CodeSection, Internal};
 
@@ -10,6 +10,7 @@ pub struct PatternContextData {
     pub uses_symbol_new: bool,
     pub uses_bytes_new: bool,
     pub require_auth_calls: usize,
+    pub require_auth_for_args_calls: usize,
     pub uses_current_contract_address: bool,
     pub symbol_literals: Vec<String>,
     pub has_fail_with_error: bool,
@@ -33,6 +34,7 @@ pub fn build_pattern_context_data(
         uses_bytes_new,
         _uses_map_new,
         require_auth_calls,
+        require_auth_for_args_calls,
         uses_current_contract_address,
         symbol_literals,
         has_fail_with_error,
@@ -52,6 +54,7 @@ pub fn build_pattern_context_data(
                     usage.uses_bytes_new,
                     usage.uses_map_new,
                     usage.require_auth_calls,
+                    usage.require_auth_for_args_calls,
                     usage.uses_current_contract_address,
                     usage.symbol_literals,
                     usage.has_fail_with_error,
@@ -67,6 +70,7 @@ pub fn build_pattern_context_data(
                     false,
                     false,
                     false,
+                    0,
                     0,
                     false,
                     Vec::new(),
@@ -85,6 +89,7 @@ pub fn build_pattern_context_data(
                 false,
                 false,
                 0,
+                0,
                 false,
                 Vec::new(),
                 false,
@@ -101,6 +106,7 @@ pub fn build_pattern_context_data(
             false,
             false,
             false,
+            0,
             0,
             false,
             Vec::new(),
@@ -119,6 +125,7 @@ pub fn build_pattern_context_data(
         uses_symbol_new,
         uses_bytes_new,
         require_auth_calls,
+        require_auth_for_args_calls,
         uses_current_contract_address,
         symbol_literals,
         has_fail_with_error,
@@ -144,9 +151,12 @@ pub fn build_pattern_context<'a>(
     has_spend_limit_variant: bool,
     has_counter_variant: bool,
     has_owner_variant: bool,
+    data_key_variants: &'a [crate::app::utils::DataKeyVariant],
+    struct_defs: &'a [crate::app::utils::StructDef],
     input_types: &'a [String],
     addr_indices: &'a [usize],
     i128_indices: &'a [usize],
+    is_account_contract: bool,
 ) -> PatternContext<'a> {
     PatternContext {
         export_name: &ctx_data.export_name,
@@ -158,6 +168,7 @@ pub fn build_pattern_context<'a>(
         uses_symbol_new: ctx_data.uses_symbol_new,
         uses_bytes_new: ctx_data.uses_bytes_new,
         require_auth_calls: ctx_data.require_auth_calls,
+        require_auth_for_args_calls: ctx_data.require_auth_for_args_calls,
         uses_current_contract_address: ctx_data.uses_current_contract_address,
         symbol_literals: &ctx_data.symbol_literals,
         string_literals,
@@ -176,7 +187,10 @@ pub fn build_pattern_context<'a>(
         has_spend_limit_variant,
         has_counter_variant,
         has_owner_variant,
+        data_key_variants,
+        struct_defs,
         uses_update_current_contract_wasm: ctx_data.uses_update_current_contract_wasm,
+        is_account_contract,
     }
 }
 
@@ -184,5 +198,5 @@ pub fn find_spec_for_export(
     contract_specs: &crate::soroban::contract::ContractSpecs,
     export: &parity_wasm::elements::ExportEntry,
 ) -> Option<crate::soroban::contract::FunctionContractSpec> {
-    find_function_specs(contract_specs, export.field())
+    get_backend().find_function_specs(contract_specs, export.field())
 }

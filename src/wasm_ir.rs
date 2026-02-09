@@ -30,16 +30,16 @@ pub enum BlockKind {
         evaluates_to_value: bool,
     },
     Block {
-        label: usize,
+        label: Option<usize>,
         dst_var: Option<String>,
     },
     If {
-        label: usize,
+        label: Option<usize>,
         dst_var: Option<String>,
         is_breakable: bool,
     },
     Loop {
-        label: usize,
+        label: Option<usize>,
         dst_var: Option<String>,
     },
 }

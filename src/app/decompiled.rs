@@ -1,6 +1,7 @@
 use crate::decompile::scan_body;
 use crate::patterns::{PatternContext, PatternState};
-use crate::soroban::contract::find_function_specs;
+use crate::patterns::templates::{TemplateMatcher, TemplateLibrary};
+use crate::sdk::get_backend;
 use crate::wasm_ir::mangle_fn_name;
 use parity_wasm::elements::{CodeSection, ExportSection, Internal};
 use std::io::Write;
@@ -18,6 +19,9 @@ pub fn emit_contract_functions<W: Write>(
     has_allowance_key_type: bool,
     pattern_state: &mut PatternState,
 ) -> Result<(), String> {
+    // Create template matcher for pattern-based code generation
+    let template_matcher = TemplateMatcher::with_library(TemplateLibrary::new());
+
     let impl_block = r#"
 
 #[contractimpl]
@@ -91,7 +95,7 @@ impl {contract_name} {"#
                     false,
                 )
             };
-            let spec_fn = find_function_specs(contract_specs, export.field());
+            let spec_fn = get_backend().find_function_specs(contract_specs, export.field());
 
             if let Some(spec_fn) = spec_fn {
                 let input_types: Vec<String> = spec_fn
@@ -131,6 +135,14 @@ impl {contract_name} {"#
                     has_allowance_value_type,
                     has_allowance_key_type,
                 };
+
+                // Try template-based generation first (higher priority than hardcoded patterns)
+                if let Some(generated) = template_matcher.try_generate_with_context(&spec_fn, &export_name, &ctx) {
+                    writeln!(writer, "{}", generated).map_err(|e| e.to_string())?;
+                    continue;
+                }
+
+                // Fallback to existing hardcoded patterns
                 if crate::patterns::try_emit(writer, &spec_fn, &ctx, pattern_state) {
                     continue;
                 }
