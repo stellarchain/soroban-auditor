@@ -338,6 +338,16 @@ fn postprocess_remove_unused_methods(output: String, contract_name: &str) -> Str
     out_lines.join("\n")
 }
 
+/// Apply engine patterns to clean up generated code
+/// Currently disabled due to parsing issues - returns input unchanged
+fn postprocess_apply_patterns(output: String) -> String {
+    // TODO: Re-enable when function parsing logic is fixed
+    // The current implementation has issues with brace matching
+    // causing parts of the file to be skipped
+    eprintln!("Note: Pattern postprocessing is temporarily disabled");
+    output
+}
+
 fn parse_len_line(line: &str) -> Option<String> {
     // expects: let <var> = Vec::<Val>::from_val(env, &val_from_i64(<x>)).len() as i64;
     let trimmed = line.trim();
@@ -1309,6 +1319,7 @@ impl {contract_name} {"#
     let output = String::from_utf8(writer).map_err(|e| e.to_string())?;
     let output = postprocess_memory_macros(output, &contract_name);
     let output = postprocess_remove_unused_methods(output, &contract_name);
+    let output = postprocess_apply_patterns(output);
     std::fs::write(output_path, output).map_err(|e| e.to_string())?;
     Ok(())
 }

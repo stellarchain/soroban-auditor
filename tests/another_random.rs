@@ -126,13 +126,13 @@ impl AnotherRandom {
         let mut value: i32 = 0;
         let mut value: i64 = 0;
         let mut value: i64 = 0;
-        value = var5.wrapping_sub(96);
+        // TODO: Type check for feed_ids as Vec::<Val>
         if (!(Vec::<Val>::try_from_val(env, &val_from_i64(feed_ids)).is_ok())) as i32 | (!(Bytes::try_from_val(env, &val_from_i64(payload)).is_ok())) as i32 != 0 {
             unreachable!();
         }
         else {
-            // TODO: helper function call removed: self.entry_decode(env, value, feed_ids, payload);
-            // TODO: helper function call removed: self.decode_val_or_error(env, value.wrapping_sub(-64), value);
+            // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: self.entry_decode(env, value, feed_ids, payload);
+            // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: self.decode_val_or_error(env, value.wrapping_sub(-64), value);
             let mut slot_var2_72_i64 = mload64!(value as usize + 72) as i64;
             payload = slot_var2_72_i64;
             let var8: i64;
@@ -141,7 +141,9 @@ impl AnotherRandom {
                 if (slot_var2_64_i32 == 0) as i32 != 0 {
                     let mut slot_var2_80_i64 = mload64!(value as usize + 80) as i64;
                     value = slot_var2_80_i64;
+                    // TODO: Conversion from value to Vec::<Val> for var9
                     let var9 = Vec::<Val>::from_val(env, &val_from_i64(value)).len() as i64;
+                    // TODO: Conversion from feed_ids to Vec::<Val> for var10
                     let var10 = Vec::<Val>::from_val(env, &val_from_i64(feed_ids)).len() as i64;
                     let var11 = 42949672963 /* Error(Contract, #10) */;
                     if ((var9 ^ var10) as u64 >= 4294967296 as u64) as i32 != 0 {
@@ -149,6 +151,7 @@ impl AnotherRandom {
                         return var8;
                     }
                     var11;
+                    // TODO: Conversion from value to Vec::<Val> for var12
                     let var12 = Vec::<Val>::from_val(env, &val_from_i64(value)).len() as i64;
                     value = var12;
                     let var13 = val_to_i64(Vec::<Val>::new(env).into_val(env));
@@ -157,16 +160,17 @@ impl AnotherRandom {
                     let mut slot_var2_56_i32 = 0 as i32;
                     let mut slot_var2_48_i64 = value as i64;
                     loop {
-                        // TODO: helper function call removed: self.vec_pair_iter(env, value, value.wrapping_add(48));
-                        // TODO: helper function call removed: self.copy_val_if_present(env, value.wrapping_sub(-64), value);
+                        // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: self.vec_pair_iter(env, value, value.wrapping_add(48));
+                        // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: self.copy_val_if_present(env, value.wrapping_sub(-64), value);
                         if (slot_var2_64_i32 == 1) as i32 != 0 {
+                            // TODO: Conversion from feed_ids to Vec::<Val> for var16
                             let var16 = { let mut v = Vec::<Val>::from_val(env, &val_from_i64(feed_ids)); v.push_back(val_from_i64(slot_var2_80_i64)); val_to_i64(v.into_val(env)) };
                             feed_ids = var16;
                             continue;
                         }
                         break;
                     }
-                    // TODO: helper function call removed: self.write_ok_val(env, value, payload);
+                    // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: self.write_ok_val(env, value, payload);
                     let mut slot_var2_0_i32 = mload32!(value as usize) as i32;
                     if slot_var2_0_i32 != 0 {
                         return var8;
@@ -194,10 +198,11 @@ impl AnotherRandom {
         let mut value: i32 = 0;
         let mut value: i64 = 0;
         let mut value: i64 = 0;
-        value = var7.wrapping_sub(96);
+        // TODO: Type check for feed_ids as Vec::<Val>
         if (Vec::<Val>::try_from_val(env, &val_from_i64(feed_ids)).is_ok()) as i32 != 0 {
             let var8 = val_to_i64(Vec::<Val>::new(env).into_val(env));
             value = var8;
+            // TODO: Conversion from feed_ids to Vec::<Val> for var9
             let var9 = Vec::<Val>::from_val(env, &val_from_i64(feed_ids)).len() as i64;
             value = var9;
             let mut slot_var1_16_i32 = 0 as i32;
@@ -230,6 +235,7 @@ impl AnotherRandom {
                             value = feed_ids;
                             break;
                         }
+                        // TODO: Conversion from value to Vec::<Val> for var15
                         let var15 = { let mut v = Vec::<Val>::from_val(env, &val_from_i64(value)); v.push_back(val_from_i64(feed_ids)); val_to_i64(v.into_val(env)) };
                         value = var15;
                         continue;
@@ -252,6 +258,7 @@ impl AnotherRandom {
         {
             let mut __exit_label1: i32 = 0;
             '__if_guard0: {
+                // TODO: Type check for feed_id as String
                 if (String::try_from_val(env, &val_from_i64(feed_id)).is_ok()) as i32 != 0 {
                     value = value.wrapping_add(32);
                     self.storage_get_val(env, value, feed_id);
@@ -269,7 +276,7 @@ impl AnotherRandom {
                     if slot_var1_32_i32 != 0 {
                         __exit_label1 = 1; break '__if_guard0;
                     }
-                    // TODO: helper function call removed: self.write_ok_val(env, value, slot_var1_48_i64);
+                    // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: self.write_ok_val(env, value, slot_var1_48_i64);
                     if (slot_var1_32_i32 != 1) as i32 != 0 {
                         __exit_label1 = 1; break '__if_guard0;
                     }
@@ -289,7 +296,7 @@ impl AnotherRandom {
     }
     pub fn read_price_data_for_feed(&mut self, env: Env, feed_id: soroban_sdk::String) -> Result<PriceData, soroban_sdk::Error> {
         let mut value: i32 = 0;
-        value = var2.wrapping_sub(96);
+        // TODO: Type check for feed_id as String
         if (String::try_from_val(env, &val_from_i64(feed_id)).is_ok()) as i32 != 0 {
             self.storage_get_val(env, value.wrapping_add(40), feed_id);
             let mut slot_var1_40_i32 = mload32!(value as usize + 40) as i32;
@@ -322,12 +329,13 @@ impl AnotherRandom {
         let mut value: i32 = 0;
         let mut value: i64 = 0;
         let mut value: i64 = 0;
-        value = var9.wrapping_sub(112);
         value = Error(Storage, MissingValue);
         {
+            // TODO: Type check for feed_ids as Vec::<Val>
             if (Vec::<Val>::try_from_val(env, &val_from_i64(feed_ids)).is_ok()) as i32 != 0 {
                 let var10 = val_to_i64(Vec::<Val>::new(env).into_val(env));
                 value = var10;
+                // TODO: Conversion from feed_ids to Vec::<Val> for var11
                 let var11 = Vec::<Val>::from_val(env, &val_from_i64(feed_ids)).len() as i64;
                 value = var11;
                 let mut slot_var1_8_i32 = 0 as i32;
@@ -364,6 +372,7 @@ impl AnotherRandom {
                         mstore64!(value.wrapping_add(8) as usize, slot_var6_0_i64 as u64);
                         let mut slot_var1_88_i64 = feed_ids as i64;
                         let var16 = self.result_unwrap_or_panic(env, value.wrapping_add(88));
+                        // TODO: Conversion from value to Vec::<Val> for var17
                         let var17 = { let mut v = Vec::<Val>::from_val(env, &val_from_i64(value)); v.push_back(val_from_i64(var16)); val_to_i64(v.into_val(env)) };
                         value = var17;
                         continue;
@@ -402,8 +411,7 @@ impl AnotherRandom {
     pub fn unique_signer_threshold(&mut self, env: Env) -> u64 {
         let mut value: i32 = 0;
         let mut value: i64 = 0;
-        value = var2.wrapping_sub(16);
-        // TODO: helper function call removed: self.write_ok_val(env, value, 0 /* Void */);
+        // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: // TODO: helper function call removed: self.write_ok_val(env, value, 0 /* Void */);
         let mut slot_var0_0_i32 = mload32!(value as usize) as i32;
         if (slot_var0_0_i32 == 1) as i32 != 0 {
             unreachable!();
