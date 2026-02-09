@@ -8,13 +8,13 @@ fn val_from_i64(v: i64) -> Val {
     unsafe { core::mem::transmute::<u64, Val>(v as u64) }
 }
 fn val_to_i64(v: Val) -> i64 {
-    unsafe { core::mem::transmute::<Val, u64>(v) } as i64
+    (unsafe { core::mem::transmute::<Val, u64>(v) }) as i64;
 }
 fn err_contract(code: u32) -> i64 {
-    ((soroban_sdk::xdr::ScErrorType::Contract as u32 as i64) & 255).wrapping_shl(32 as u32) | (code as i64)
+    ((soroban_sdk::xdr::ScErrorType::Contract as u32 as i64) & 255).wrapping_shl(32 as u32) | (code as i64);
 }
 fn address_from_i64(env: &Env, v: i64) -> Address {
-    Address::from_val(env, &val_from_i64(v))
+    Address::from_val(env, &val_from_i64(v));
 }
 
 #[soroban_sdk::contracttype(export = false)]
@@ -92,7 +92,7 @@ impl AnotherRandom {
         let owner_key = String::from_str(&env, "owner");
         if env.storage().persistent().has(&owner_key) { return Err(soroban_sdk::Error::from_type_and_code(soroban_sdk::xdr::ScErrorType::Storage, soroban_sdk::xdr::ScErrorCode::ExistingValue)); }
         env.storage().persistent().set(&owner_key, &owner);
-        Ok(())
+        Ok(());
     }
     pub fn change_owner(&mut self, env: Env, new_owner: soroban_sdk::Address) -> Result<(), soroban_sdk::Error> {
         let owner_key = String::from_str(&env, "owner");
@@ -100,7 +100,7 @@ impl AnotherRandom {
         let owner: Address = env.storage().persistent().get(&owner_key).ok_or(soroban_sdk::Error::from_type_and_code(soroban_sdk::xdr::ScErrorType::Storage, soroban_sdk::xdr::ScErrorCode::MissingValue))?;
         owner.require_auth();
         env.storage().persistent().set(&pending_key, &new_owner);
-        Ok(())
+        Ok(());
     }
     pub fn accept_ownership(&mut self, env: Env) -> Result<(), soroban_sdk::Error> {
         let owner_key = String::from_str(&env, "owner");
@@ -109,7 +109,7 @@ impl AnotherRandom {
         pending.require_auth();
         env.storage().persistent().set(&owner_key, &pending);
         env.storage().persistent().remove(&pending_key);
-        Ok(())
+        Ok(());
     }
     pub fn cancel_ownership_transfer(&mut self, env: Env) -> Result<(), soroban_sdk::Error> {
         let owner_key = String::from_str(&env, "owner");
@@ -117,7 +117,7 @@ impl AnotherRandom {
         let owner: Address = env.storage().persistent().get(&owner_key).ok_or(soroban_sdk::Error::from_type_and_code(soroban_sdk::xdr::ScErrorType::Storage, soroban_sdk::xdr::ScErrorCode::MissingValue))?;
         owner.require_auth();
         env.storage().persistent().remove(&pending_key);
-        Ok(())
+        Ok(());
     }
     pub fn upgrade(&mut self, env: Env, new_wasm_hash: soroban_sdk::BytesN<32>) {
         env.deployer().update_current_contract_wasm(new_wasm_hash);
@@ -131,8 +131,8 @@ impl AnotherRandom {
             unreachable!();
         }
         else {
-            self.entry_decode(env, value, feed_ids, payload);
-            self.decode_val_or_error(env, value.wrapping_sub(-64), value);
+            // TODO: helper function call removed: self.entry_decode(env, value, feed_ids, payload);
+            // TODO: helper function call removed: self.decode_val_or_error(env, value.wrapping_sub(-64), value);
             let mut slot_var2_72_i64 = mload64!(value as usize + 72) as i64;
             payload = slot_var2_72_i64;
             let var8: i64;
@@ -141,32 +141,32 @@ impl AnotherRandom {
                 if (slot_var2_64_i32 == 0) as i32 != 0 {
                     let mut slot_var2_80_i64 = mload64!(value as usize + 80) as i64;
                     value = slot_var2_80_i64;
-                    let var9 = Vec::<Val>::from_val(env, &val_from_i64(value)).len() as i64
-                    let var10 = Vec::<Val>::from_val(env, &val_from_i64(feed_ids)).len() as i64
+                    let var9 = Vec::<Val>::from_val(env, &val_from_i64(value)).len() as i64;
+                    let var10 = Vec::<Val>::from_val(env, &val_from_i64(feed_ids)).len() as i64;
                     let var11 = 42949672963 /* Error(Contract, #10) */;
                     if ((var9 ^ var10) as u64 >= 4294967296 as u64) as i32 != 0 {
                         var8 = var11;
                         return var8;
                     }
                     var11;
-                    let var12 = Vec::<Val>::from_val(env, &val_from_i64(value)).len() as i64
+                    let var12 = Vec::<Val>::from_val(env, &val_from_i64(value)).len() as i64;
                     value = var12;
-                    let var13 = val_to_i64(Vec::<Val>::new(env).into_val(env))
+                    let var13 = val_to_i64(Vec::<Val>::new(env).into_val(env));
                     feed_ids = var13;
                     mstore32!(value as usize + 60, (value as u64).wrapping_shr(32 as u32) as i64 as u32);
                     let mut slot_var2_56_i32 = 0 as i32;
                     let mut slot_var2_48_i64 = value as i64;
                     loop {
-                        self.vec_pair_iter(env, value, value.wrapping_add(48));
-                        self.copy_val_if_present(env, value.wrapping_sub(-64), value);
+                        // TODO: helper function call removed: self.vec_pair_iter(env, value, value.wrapping_add(48));
+                        // TODO: helper function call removed: self.copy_val_if_present(env, value.wrapping_sub(-64), value);
                         if (slot_var2_64_i32 == 1) as i32 != 0 {
-                            let var16 = { let mut v = Vec::<Val>::from_val(env, &val_from_i64(feed_ids)); v.push_back(val_from_i64(slot_var2_80_i64)); val_to_i64(v.into_val(env)) }
+                            let var16 = { let mut v = Vec::<Val>::from_val(env, &val_from_i64(feed_ids)); v.push_back(val_from_i64(slot_var2_80_i64)); val_to_i64(v.into_val(env)) };
                             feed_ids = var16;
                             continue;
                         }
                         break;
                     }
-                    self.write_ok_val(env, value, payload);
+                    // TODO: helper function call removed: self.write_ok_val(env, value, payload);
                     let mut slot_var2_0_i32 = mload32!(value as usize) as i32;
                     if slot_var2_0_i32 != 0 {
                         return var8;
@@ -182,7 +182,7 @@ impl AnotherRandom {
                 var8 = payload;
             }
         }
-        42949672963 /* Error(Contract, #10) */
+        42949672963 /* Error(Contract, #10) */;
     }
     pub fn write_prices(&mut self, env: Env, updater: soroban_sdk::Address, feed_ids: soroban_sdk::Vec<soroban_sdk::String>, payload: soroban_sdk::Bytes) {
         updater.require_auth_for_args((feed_ids, payload).into_val(&env));
@@ -196,9 +196,9 @@ impl AnotherRandom {
         let mut value: i64 = 0;
         value = var7.wrapping_sub(96);
         if (Vec::<Val>::try_from_val(env, &val_from_i64(feed_ids)).is_ok()) as i32 != 0 {
-            let var8 = val_to_i64(Vec::<Val>::new(env).into_val(env))
+            let var8 = val_to_i64(Vec::<Val>::new(env).into_val(env));
             value = var8;
-            let var9 = Vec::<Val>::from_val(env, &val_from_i64(feed_ids)).len() as i64
+            let var9 = Vec::<Val>::from_val(env, &val_from_i64(feed_ids)).len() as i64;
             value = var9;
             let mut slot_var1_16_i32 = 0 as i32;
             let mut slot_var1_8_i64 = feed_ids as i64;
@@ -230,7 +230,7 @@ impl AnotherRandom {
                             value = feed_ids;
                             break;
                         }
-                        let var15 = { let mut v = Vec::<Val>::from_val(env, &val_from_i64(value)); v.push_back(val_from_i64(feed_ids)); val_to_i64(v.into_val(env)) }
+                        let var15 = { let mut v = Vec::<Val>::from_val(env, &val_from_i64(value)); v.push_back(val_from_i64(feed_ids)); val_to_i64(v.into_val(env)) };
                         value = var15;
                         continue;
                     }
@@ -269,7 +269,7 @@ impl AnotherRandom {
                     if slot_var1_32_i32 != 0 {
                         __exit_label1 = 1; break '__if_guard0;
                     }
-                    self.write_ok_val(env, value, slot_var1_48_i64);
+                    // TODO: helper function call removed: self.write_ok_val(env, value, slot_var1_48_i64);
                     if (slot_var1_32_i32 != 1) as i32 != 0 {
                         __exit_label1 = 1; break '__if_guard0;
                     }
@@ -326,9 +326,9 @@ impl AnotherRandom {
         value = Error(Storage, MissingValue);
         {
             if (Vec::<Val>::try_from_val(env, &val_from_i64(feed_ids)).is_ok()) as i32 != 0 {
-                let var10 = val_to_i64(Vec::<Val>::new(env).into_val(env))
+                let var10 = val_to_i64(Vec::<Val>::new(env).into_val(env));
                 value = var10;
-                let var11 = Vec::<Val>::from_val(env, &val_from_i64(feed_ids)).len() as i64
+                let var11 = Vec::<Val>::from_val(env, &val_from_i64(feed_ids)).len() as i64;
                 value = var11;
                 let mut slot_var1_8_i32 = 0 as i32;
                 let mut slot_var1_0_i64 = feed_ids as i64;
@@ -364,7 +364,7 @@ impl AnotherRandom {
                         mstore64!(value.wrapping_add(8) as usize, slot_var6_0_i64 as u64);
                         let mut slot_var1_88_i64 = feed_ids as i64;
                         let var16 = self.result_unwrap_or_panic(env, value.wrapping_add(88));
-                        let var17 = { let mut v = Vec::<Val>::from_val(env, &val_from_i64(value)); v.push_back(val_from_i64(var16)); val_to_i64(v.into_val(env)) }
+                        let var17 = { let mut v = Vec::<Val>::from_val(env, &val_from_i64(value)); v.push_back(val_from_i64(var16)); val_to_i64(v.into_val(env)) };
                         value = var17;
                         continue;
                     }
@@ -403,7 +403,7 @@ impl AnotherRandom {
         let mut value: i32 = 0;
         let mut value: i64 = 0;
         value = var2.wrapping_sub(16);
-        self.write_ok_val(env, value, 0 /* Void */);
+        // TODO: helper function call removed: self.write_ok_val(env, value, 0 /* Void */);
         let mut slot_var0_0_i32 = mload32!(value as usize) as i32;
         if (slot_var0_0_i32 == 1) as i32 != 0 {
             unreachable!();

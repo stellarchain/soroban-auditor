@@ -975,7 +975,7 @@ pub fn run(opt: Opt) -> Result<(), String> {
     writeln!(writer, "fn val_to_i64(v: Val) -> i64 {{").map_err(|e| e.to_string())?;
     writeln!(
         writer,
-        "    unsafe {{ core::mem::transmute::<Val, u64>(v) }} as i64"
+        "    (unsafe {{ core::mem::transmute::<Val, u64>(v) }}) as i64"
     )
     .map_err(|e| e.to_string())?;
     writeln!(writer, "}}").map_err(|e| e.to_string())?;
