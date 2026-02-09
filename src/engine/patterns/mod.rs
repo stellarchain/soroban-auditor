@@ -61,6 +61,7 @@ mod undefined_helpers;
 mod missing_semicolons;
 mod conversion_elimination;
 mod deduplicate_variables;
+mod consolidate_comments;
 
 pub use storage_access::StorageAccessPattern;
 pub use math_operations::MathOperationsPattern;
@@ -70,6 +71,7 @@ pub use undefined_helpers::UndefinedHelpersPattern;
 pub use missing_semicolons::MissingSemicolonsPattern;
 pub use conversion_elimination::ConversionEliminationPattern;
 pub use deduplicate_variables::DeduplicateVariablesPattern;
+pub use consolidate_comments::ConsolidateCommentsPattern;
 pub use loop_if_break_else::LoopIfBreakElse;
 pub use loop_break_tail_return::LoopBreakTailReturn;
 pub use unwrap_if_else::UnwrapIfElseBlock;

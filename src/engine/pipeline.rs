@@ -9,7 +9,7 @@ use crate::engine::patterns::{
     LoopBreakTailReturn, UnwrapIfElseBlock, LoopNoControlToBlock, GuardEarlyReturn,
     StorageAccessPattern, MathOperationsPattern, VariableNamingPattern, StackFramePattern,
     UndefinedHelpersPattern, MissingSemicolonsPattern, ConversionEliminationPattern,
-    DeduplicateVariablesPattern,
+    DeduplicateVariablesPattern, ConsolidateCommentsPattern,
 };
 
 pub struct Engine {
@@ -105,7 +105,11 @@ pub fn default_engine() -> Engine {
     engine.register(MissingSemicolonsPattern::new());  // Fix missing semicolons
     engine.register(StorageAccessPattern::new());
     engine.register(MathOperationsPattern::new());
-    engine.register(VariableNamingPattern::new());
+    // DISABLED: VariableNamingPattern causes panics on some contracts
+    // engine.register(VariableNamingPattern::new());
+
+    // Comment cleanup - MUST RUN LAST to consolidate all diagnostic comments
+    engine.register(ConsolidateCommentsPattern::new());
 
     engine
 }
