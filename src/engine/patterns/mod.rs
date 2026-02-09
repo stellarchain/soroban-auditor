@@ -56,10 +56,12 @@ pub use exit_flag_default::ExitFlagDefaultAssign;
 mod storage_access;
 mod math_operations;
 mod variable_naming;
+mod stack_frame;
 
 pub use storage_access::StorageAccessPattern;
 pub use math_operations::MathOperationsPattern;
 pub use variable_naming::VariableNamingPattern;
+pub use stack_frame::StackFramePattern;
 pub use loop_if_break_else::LoopIfBreakElse;
 pub use loop_break_tail_return::LoopBreakTailReturn;
 pub use unwrap_if_else::UnwrapIfElseBlock;

@@ -7,7 +7,7 @@ use crate::engine::patterns::{
     SinglePassUnlabeledLoopCleanup, CopyPayloadPattern, ExitFlagLoopCollapse, LoopUnreachableElse,
     LoopIfUnreachableToBlock, GuardBlockBreaks, LoopGuardToIf, ExitFlagDefaultAssign, LoopIfBreakElse,
     LoopBreakTailReturn, UnwrapIfElseBlock, LoopNoControlToBlock, GuardEarlyReturn,
-    StorageAccessPattern, MathOperationsPattern, VariableNamingPattern,
+    StorageAccessPattern, MathOperationsPattern, VariableNamingPattern, StackFramePattern,
 };
 
 pub struct Engine {
@@ -72,6 +72,7 @@ pub fn default_engine() -> Engine {
     engine.register(IrLabelCleanup::new());
 
     // New Soroban-specific patterns
+    engine.register(StackFramePattern::new());  // Must run EARLY to clean up stack artifacts
     engine.register(StorageAccessPattern::new());
     engine.register(MathOperationsPattern::new());
     engine.register(VariableNamingPattern::new());

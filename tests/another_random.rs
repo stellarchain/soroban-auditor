@@ -126,9 +126,7 @@ impl AnotherRandom {
         let mut value: i32 = 0;
         let mut value: i64 = 0;
         let mut value: i64 = 0;
-        let var5 = self.global0;
         value = var5.wrapping_sub(96);
-        self.global0 = value;
         if (!(Vec::<Val>::try_from_val(env, &val_from_i64(feed_ids)).is_ok())) as i32 | (!(Bytes::try_from_val(env, &val_from_i64(payload)).is_ok())) as i32 != 0 {
             unreachable!();
         }
@@ -148,7 +146,6 @@ impl AnotherRandom {
                     let var11 = 42949672963 /* Error(Contract, #10) */;
                     if ((var9 ^ var10) as u64 >= 4294967296 as u64) as i32 != 0 {
                         var8 = var11;
-                        self.global0 = value.wrapping_add(96);
                         return var8;
                     }
                     var11;
@@ -172,7 +169,6 @@ impl AnotherRandom {
                     self.write_ok_val(env, value, payload);
                     let mut slot_var2_0_i32 = mload32!(value as usize) as i32;
                     if slot_var2_0_i32 != 0 {
-                        self.global0 = value.wrapping_add(96);
                         return var8;
                     }
                     let mut slot_var2_8_i64 = mload64!(value as usize + 8) as i64;
@@ -181,7 +177,6 @@ impl AnotherRandom {
                     let mut slot_var2_64_i64 = payload as i64;
                     let var18 = val_to_i64(Vec::<Val>::new(env).into_val(env)) /* TODO: linear memory */;
                     var8 = var18;
-                    self.global0 = value.wrapping_add(96);
                     return var8;
                 }
                 var8 = payload;
@@ -199,9 +194,7 @@ impl AnotherRandom {
         let mut value: i32 = 0;
         let mut value: i64 = 0;
         let mut value: i64 = 0;
-        let var7 = self.global0;
         value = var7.wrapping_sub(96);
-        self.global0 = value;
         if (Vec::<Val>::try_from_val(env, &val_from_i64(feed_ids)).is_ok()) as i32 != 0 {
             let var8 = val_to_i64(Vec::<Val>::new(env).into_val(env))
             value = var8;
@@ -245,7 +238,6 @@ impl AnotherRandom {
                 }
                 value = Error(Storage, MissingValue);
             }
-            self.global0 = value.wrapping_add(96);
             return value;
         }
         unreachable!();
@@ -255,9 +247,7 @@ impl AnotherRandom {
     pub fn read_timestamp(&mut self, env: Env, feed_id: soroban_sdk::String) -> Result<u64, soroban_sdk::Error> {
         let mut value: i32 = 0;
         let mut value: i32 = 0;
-        let var3 = self.global0;
         value = var3.wrapping_add(-64);
-        self.global0 = value;
         let var4: i64;
         {
             let mut __exit_label1: i32 = 0;
@@ -295,14 +285,11 @@ impl AnotherRandom {
                 var4 = slot_var1_40_i64;
             }
         }
-        self.global0 = value.wrapping_sub(-64);
         var4
     }
     pub fn read_price_data_for_feed(&mut self, env: Env, feed_id: soroban_sdk::String) -> Result<PriceData, soroban_sdk::Error> {
         let mut value: i32 = 0;
-        let var2 = self.global0;
         value = var2.wrapping_sub(96);
-        self.global0 = value;
         if (String::try_from_val(env, &val_from_i64(feed_id)).is_ok()) as i32 != 0 {
             self.storage_get_val(env, value.wrapping_add(40), feed_id);
             let mut slot_var1_40_i32 = mload32!(value as usize + 40) as i32;
@@ -320,7 +307,6 @@ impl AnotherRandom {
                 let mut slot_var1_8_i64 = 1 /* True */ as i64;
             }
             let var6 = self.result_from_val(env, value.wrapping_add(8));
-            self.global0 = value.wrapping_add(96);
             return var6;
         }
         unreachable!();
@@ -336,9 +322,7 @@ impl AnotherRandom {
         let mut value: i32 = 0;
         let mut value: i64 = 0;
         let mut value: i64 = 0;
-        let var9 = self.global0;
         value = var9.wrapping_sub(112);
-        self.global0 = value;
         value = Error(Storage, MissingValue);
         {
             if (Vec::<Val>::try_from_val(env, &val_from_i64(feed_ids)).is_ok()) as i32 != 0 {
@@ -365,7 +349,6 @@ impl AnotherRandom {
                     let mut slot_var1_24_i64 = mload64!(value as usize + 24) as i64;
                     self.storage_get_val(env, value, slot_var1_24_i64);
                     if (slot_var1_56_i64 != 1) as i32 != 0 {
-                        self.global0 = value.wrapping_add(112);
                         return value;
                     }
                     let mut slot_var2_0_i64 = mload64!(value as usize) as i64;
@@ -385,7 +368,6 @@ impl AnotherRandom {
                         value = var17;
                         continue;
                     }
-                    self.global0 = value.wrapping_add(112);
                     return value;
                 }
                 value = feed_ids;
@@ -395,15 +377,12 @@ impl AnotherRandom {
                 unreachable!();
             }
         }
-        self.global0 = value.wrapping_add(112);
         value
     }
     pub fn check_price_data(&mut self, env: Env, price_data: PriceData) -> Result<PriceData, soroban_sdk::Error> {
         let mut value: i32 = 0;
         let mut value: i32 = 0;
-        let var3 = self.global0;
         value = var3.wrapping_add(-64);
-        self.global0 = value;
         self.map_unpack_to_val(env, value.wrapping_add(32), price_data);
         let mut slot_var1_32_i32 = mload32!(value as usize + 32) as i32;
         if (slot_var1_32_i32 == 1) as i32 != 0 {
@@ -418,22 +397,18 @@ impl AnotherRandom {
         value = value.wrapping_add(32);
         self.check_recent_timestamp(env, value, value.wrapping_add(8));
         let var8 = self.result_from_val(env, value);
-        self.global0 = value.wrapping_sub(-64);
         var8
     }
     pub fn unique_signer_threshold(&mut self, env: Env) -> u64 {
         let mut value: i32 = 0;
         let mut value: i64 = 0;
-        let var2 = self.global0;
         value = var2.wrapping_sub(16);
-        self.global0 = value;
         self.write_ok_val(env, value, 0 /* Void */);
         let mut slot_var0_0_i32 = mload32!(value as usize) as i32;
         if (slot_var0_0_i32 == 1) as i32 != 0 {
             unreachable!();
         }
         let mut slot_var0_8_i64 = mload64!(value as usize + 8) as i64;
-        self.global0 = value.wrapping_add(16);
         slot_var0_8_i64
     }
 }
