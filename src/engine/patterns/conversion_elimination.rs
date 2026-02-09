@@ -15,6 +15,26 @@ impl ConversionEliminationPattern {
         Self
     }
 
+    /// Detectează și elimină conversii redundante: val_to_i64(val_from_i64(x)) → x
+    fn simplify_double_conversion(line: &str) -> Option<String> {
+        // Pattern: val_to_i64(val_from_i64(var))
+        if !line.contains("val_to_i64(val_from_i64(") {
+            return None;
+        }
+
+        // Extract the variable name
+        let start = line.find("val_to_i64(val_from_i64(")?;
+        let after = &line[start + "val_to_i64(val_from_i64(".len()..];
+        let end = after.find("))")?;
+        let var_name = after[..end].trim();
+
+        // Reconstruct line with simplified expression
+        let before = &line[..start];
+        let after_pattern = &after[end + 2..];  // Skip past ))
+
+        Some(format!("{}{}{}", before, var_name, after_pattern))
+    }
+
     /// Detectează pattern-ul: val_to_i64(something.into_val(&env))
     /// Returns: Some(variable_name) dacă pattern-ul este detectat
     fn extract_into_val_conversion(line: &str) -> Option<String> {
@@ -103,6 +123,13 @@ impl Pattern for ConversionEliminationPattern {
             // Skip lines that already have TODO comments from previous iterations
             if trimmed.starts_with("// TODO:") {
                 new_body.push(line.clone());
+                continue;
+            }
+
+            // QUICK FIX: Eliminate obvious double conversions: val_to_i64(val_from_i64(x)) → x
+            if let Some(simplified) = Self::simplify_double_conversion(line) {
+                changed = true;
+                new_body.push(simplified);
                 continue;
             }
 

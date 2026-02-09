@@ -8,7 +8,7 @@ use crate::engine::patterns::{
     LoopIfUnreachableToBlock, GuardBlockBreaks, LoopGuardToIf, ExitFlagDefaultAssign, LoopIfBreakElse,
     LoopBreakTailReturn, UnwrapIfElseBlock, LoopNoControlToBlock, GuardEarlyReturn,
     StorageAccessPattern, MathOperationsPattern, VariableNamingPattern, StackFramePattern,
-    UndefinedHelpersPattern, MissingSemicolonsPattern,
+    UndefinedHelpersPattern, MissingSemicolonsPattern, ConversionEliminationPattern,
 };
 
 pub struct Engine {
@@ -99,6 +99,7 @@ pub fn default_engine() -> Engine {
     // New Soroban-specific patterns
     engine.register(UndefinedHelpersPattern::new());  // Remove undefined helper calls
     engine.register(StackFramePattern::new());  // Must run EARLY to clean up stack artifacts
+    engine.register(ConversionEliminationPattern::new());  // Detect and annotate val_from_i64/val_to_i64 conversions
     engine.register(MissingSemicolonsPattern::new());  // Fix missing semicolons
     engine.register(StorageAccessPattern::new());
     engine.register(MathOperationsPattern::new());
