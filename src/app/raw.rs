@@ -1,4 +1,5 @@
 use crate::fingerprint::fingerprint_function;
+use crate::forwarder::CallForwarder;
 use crate::rewrites::try_emit_raw_rewrite;
 use crate::wasm_ir::{mangle_fn_name, to_rs_type, Function, Global};
 use parity_wasm::elements::{CodeSection, Type, TypeSection};
@@ -20,11 +21,7 @@ pub fn emit_raw_functions<W: Write>(
         crate::soroban::contract::FunctionContractSpec,
     >,
     data_segments: &[crate::decompile::DataSegment],
-    call_forwarders: &std::collections::BTreeMap<u32, crate::forwarder::CallForwarder>,
-    complex_forwarders: &std::collections::HashMap<
-        u32,
-        crate::engine::forwarder_analyzer::ForwarderInfo,
-    >,
+    forwarders: &std::collections::BTreeMap<u32, CallForwarder>,
     filter: Option<&std::collections::HashSet<u32>>,
     skip_pure: bool,
 ) -> Result<(), String> {
@@ -113,17 +110,24 @@ pub fn emit_raw_functions<W: Write>(
         if function.make_public {
             write!(writer, "pub ").map_err(|e| e.to_string())?;
         }
-        write!(writer, "fn {}(&mut self, env: &Env", function.name).map_err(|e| e.to_string())?;
+        writeln!(writer, "fn {}(", function.name).map_err(|e| e.to_string())?;
+        writeln!(writer, "        &mut self,").map_err(|e| e.to_string())?;
+        writeln!(writer, "        env: &Env,").map_err(|e| e.to_string())?;
         let spec_fn = spec_by_fn_index.get(&(fn_index as u32));
         for (i, &param) in fn_type.params().iter().enumerate() {
             let param_name = spec_fn
                 .and_then(|spec| spec.inputs().get(i))
                 .map(|param| mangle_fn_name(param.name()))
                 .unwrap_or_else(|| format!("arg{}", i));
-            write!(writer, ", mut {}: {}", param_name, to_rs_type(param))
-                .map_err(|e| e.to_string())?;
+            writeln!(
+                writer,
+                "        mut {}: {},",
+                param_name,
+                to_rs_type(param)
+            )
+            .map_err(|e| e.to_string())?;
         }
-        write!(writer, ")").map_err(|e| e.to_string())?;
+        write!(writer, "    )").map_err(|e| e.to_string())?;
         for result in fn_type.results() {
             write!(writer, " -> {}", to_rs_type(*result)).map_err(|e| e.to_string())?;
         }
@@ -159,8 +163,7 @@ pub fn emit_raw_functions<W: Write>(
             spec_by_fn_index,
             fn_index,
             data_segments,
-            call_forwarders,
-            complex_forwarders,
+            forwarders,
         );
     }
 

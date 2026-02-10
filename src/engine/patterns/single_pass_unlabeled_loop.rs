@@ -48,7 +48,7 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
                 footer,
             } => {
                 let mut new_body = rewrite(body, changed);
-                if !contains_continue(&new_body) && ends_with_break(&new_body) {
+                if !contains_continue_at_depth0(&new_body, 0) && ends_with_break(&new_body) {
                     trim_trailing_break(&mut new_body);
                     let indent = header
                         .chars()
@@ -94,16 +94,22 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
     out
 }
 
-fn contains_continue(nodes: &[Node]) -> bool {
+fn contains_continue_at_depth0(nodes: &[Node], loop_depth: usize) -> bool {
     for node in nodes {
         match node {
             Node::Line(line) => {
-                if line.trim() == "continue;" || line.trim().starts_with("continue '") {
+                let t = line.trim();
+                if loop_depth == 0 && (t == "continue;" || t.starts_with("continue '")) {
                     return true;
                 }
             }
-            Node::Block { body, .. } => {
-                if contains_continue(body) {
+            Node::Block { kind, body, .. } => {
+                let next_depth = if *kind == BlockKind::Loop {
+                    loop_depth + 1
+                } else {
+                    loop_depth
+                };
+                if contains_continue_at_depth0(body, next_depth) {
                     return true;
                 }
             }

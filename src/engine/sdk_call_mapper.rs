@@ -54,6 +54,8 @@ impl SdkCallMapper {
         self.aliases
             .insert("storage_set_val".to_string(), "put_contract_data".to_string());
         self.aliases
+            .insert("storage_remove_val".to_string(), "del_contract_data".to_string());
+        self.aliases
             .insert("require_owner_auth".to_string(), "require_auth".to_string());
         self.aliases.insert(
             "require_auth_for_key".to_string(),
@@ -149,11 +151,12 @@ impl SdkCallMapper {
 
     /// Map an SDK function call to high-level Rust syntax
     pub fn map_call(&self, sdk_function: &str, args: &[String]) -> Option<String> {
+        let normalized = strip_numeric_suffix(sdk_function);
         let canonical = self
             .aliases
-            .get(sdk_function)
+            .get(normalized)
             .map(|s| s.as_str())
-            .unwrap_or(sdk_function);
+            .unwrap_or(normalized);
 
         // Check if we have a special mapping
         if let Some(rule) = self.special_mappings.get(canonical) {
@@ -283,6 +286,15 @@ impl SdkCallMapper {
     pub fn get_function_info(&self, name: &str) -> Option<crate::sdk::SdkFunctionInfo> {
         self.detector.get_by_name(name).cloned()
     }
+}
+
+fn strip_numeric_suffix(name: &str) -> &str {
+    if let Some((base, suffix)) = name.rsplit_once('_') {
+        if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) {
+            return base;
+        }
+    }
+    name
 }
 
 impl Default for SdkCallMapper {

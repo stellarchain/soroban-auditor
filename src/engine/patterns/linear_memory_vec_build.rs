@@ -25,10 +25,18 @@ impl Pattern for LinearMemoryVecBuildPattern {
 
         for i in 0..new_body.len() {
             let line = new_body[i].trim();
-            if !line.contains("val_to_i64(Vec::<Val>::new(env).into_val(env)) /* TODO: linear memory */")
-            {
+            let old_expr = "val_to_i64(Vec::<Val>::new(env).into_val(env)) /* TODO: linear memory */";
+            let new_expr = "val_to_i64(Vec::<Val>::new(env).into_val(env))";
+            let matched_expr = if line.contains(old_expr) {
+                Some(old_expr)
+            } else if line.contains(new_expr) {
+                Some(new_expr)
+            } else {
+                None
+            };
+            let Some(matched_expr) = matched_expr else {
                 continue;
-            }
+            };
 
             if let Some((slot0, slot8)) = find_recent_slot_pair(&new_body, i) {
                 let indent = new_body[i]
@@ -39,7 +47,7 @@ impl Pattern for LinearMemoryVecBuildPattern {
                     "{}{}",
                     indent,
                     line.replacen(
-                        "val_to_i64(Vec::<Val>::new(env).into_val(env)) /* TODO: linear memory */",
+                        matched_expr,
                         &format!(
                             "{{ let mut v = Vec::<Val>::new(env); v.push_back(val_from_i64({})); v.push_back(val_from_i64({})); val_to_i64(v.into_val(env)) }}",
                             slot0, slot8

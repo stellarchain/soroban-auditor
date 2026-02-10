@@ -49,7 +49,7 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
             } => {
                 let new_body = rewrite(body, changed);
                 if let Some(rewritten) = try_guard_if(&label, &header, &new_body) {
-                    out.push(rewritten);
+                    out.extend(rewritten);
                     *changed = true;
                     continue;
                 }
@@ -83,28 +83,41 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
     out
 }
 
-fn try_guard_if(label: &str, header: &str, body: &[Node]) -> Option<Node> {
-    let mut iter = body.iter().filter(|node| !is_empty_line(node));
-    let first = iter.next()?;
-    let if_block = match first {
-        Node::Block {
-            kind: BlockKind::If,
-            header,
-            body,
-            ..
-        } => (header, body),
-        _ => return None,
-    };
-    if !is_single_break_label(if_block.1, label) {
+fn try_guard_if(label: &str, header: &str, body: &[Node]) -> Option<Vec<Node>> {
+    let mut guard_idx = None;
+    let mut cond = String::new();
+
+    for (idx, node) in body.iter().enumerate() {
+        match node {
+            Node::Line(line) if line.trim().is_empty() => continue,
+            Node::Line(_) => continue,
+            Node::Block {
+                kind: BlockKind::If,
+                header,
+                body,
+                ..
+            } => {
+                if !is_single_break_label(body, label) {
+                    return None;
+                }
+                cond = extract_if_condition(header)?;
+                guard_idx = Some(idx);
+                break;
+            }
+            Node::Block { .. } => return None,
+        }
+    }
+
+    let guard_idx = guard_idx?;
+    let prefix = body[..guard_idx].to_vec();
+    let mut rest: Vec<Node> = body[guard_idx + 1..].to_vec();
+    if rest.is_empty() {
+        return None;
+    }
+    if contains_label_control(&prefix, label) || contains_label_control(&rest, label) {
         return None;
     }
 
-    let mut rest: Vec<Node> = iter.cloned().collect();
-    if contains_break_label(&rest, label) {
-        return None;
-    }
-
-    let cond = extract_if_condition(if_block.0)?;
     let indent = header
         .chars()
         .take_while(|c| c.is_whitespace())
@@ -112,13 +125,17 @@ fn try_guard_if(label: &str, header: &str, body: &[Node]) -> Option<Node> {
     let new_header = format!("{indent}if !({cond}) {{");
     let new_footer = format!("{indent}}}");
 
-    Some(Node::Block {
+    let rewritten_if = Node::Block {
         kind: BlockKind::If,
         label: None,
         header: new_header,
         body: rest.drain(..).collect(),
         footer: new_footer,
-    })
+    };
+
+    let mut rewritten = prefix;
+    rewritten.push(rewritten_if);
+    Some(rewritten)
 }
 
 fn extract_if_condition(header: &str) -> Option<String> {
@@ -145,25 +162,23 @@ fn is_single_break_label(body: &[Node], label: &str) -> bool {
     lines.len() == 1 && lines[0] == format!("break '{};", label)
 }
 
-fn contains_break_label(nodes: &[Node], label: &str) -> bool {
-    let target = format!("break '{};", label);
+fn contains_label_control(nodes: &[Node], label: &str) -> bool {
+    let break_target = format!("break '{};", label);
+    let continue_target = format!("continue '{};", label);
     for node in nodes {
         match node {
             Node::Line(line) => {
-                if line.trim() == target {
+                let trimmed = line.trim();
+                if trimmed == break_target || trimmed == continue_target {
                     return true;
                 }
             }
             Node::Block { body, .. } => {
-                if contains_break_label(body, label) {
+                if contains_label_control(body, label) {
                     return true;
                 }
             }
         }
     }
     false
-}
-
-fn is_empty_line(node: &Node) -> bool {
-    matches!(node, Node::Line(line) if line.trim().is_empty())
 }

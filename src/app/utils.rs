@@ -50,6 +50,20 @@ pub fn build_call_forwarders(
     out
 }
 
+pub fn merge_forwarders(
+    simple: &BTreeMap<u32, CallForwarder>,
+    complex: &HashMap<u32, crate::engine::forwarder_analyzer::ForwarderInfo>,
+) -> BTreeMap<u32, CallForwarder> {
+    let mut merged = simple.clone();
+    for (fn_index, info) in complex {
+        merged.entry(*fn_index).or_insert_with(|| CallForwarder {
+            target: info.target_function,
+            args: info.args.clone(),
+        });
+    }
+    merged
+}
+
 pub fn is_const_expr_immutable_instead_of_const(opcodes: &[Instruction]) -> bool {
     opcodes.len() == 2 && matches!(opcodes[0], Instruction::GetGlobal(_))
 }
@@ -430,8 +444,43 @@ pub fn build_functions<'a>(
     for function in &mut functions {
         function.name = mangle_fn_name(&function.name);
     }
+    normalize_special_function_names(&mut functions);
 
     functions
+}
+
+fn normalize_special_function_names(functions: &mut [Function<'_>]) {
+    let mut used: std::collections::HashSet<String> =
+        functions.iter().map(|f| f.name.clone()).collect();
+
+    for function in functions.iter_mut() {
+        let target = if function.name == "___constructor" {
+            Some("__constructor".to_string())
+        } else {
+            None
+        };
+
+        let Some(mut candidate) = target else { continue };
+        if candidate == function.name {
+            continue;
+        }
+
+        used.remove(&function.name);
+        if used.contains(&candidate) {
+            let base = candidate.clone();
+            let mut n = 2usize;
+            loop {
+                let alt = format!("{}_{}", base, n);
+                if !used.contains(&alt) {
+                    candidate = alt;
+                    break;
+                }
+                n += 1;
+            }
+        }
+        function.name = candidate.clone();
+        used.insert(candidate);
+    }
 }
 
 pub fn build_globals<'a>(

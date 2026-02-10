@@ -52,6 +52,27 @@ impl ConversionEliminationPattern {
         Some(var_name.to_string())
     }
 
+    fn extract_type_name_before_anchor(line: &str, anchor: &str) -> Option<String> {
+        let anchor_pos = line.find(anchor)?;
+        let before = &line[..anchor_pos];
+        let mut start = 0usize;
+        for (idx, ch) in before.char_indices().rev() {
+            if matches!(
+                ch,
+                '=' | '(' | ')' | '{' | '}' | '[' | ']' | '|' | '&' | '!' | '+' | '-'
+                    | '*' | '/' | ';'
+            ) {
+                start = idx + 1;
+                break;
+            }
+        }
+        let candidate = before[start..].trim();
+        if candidate.is_empty() {
+            return None;
+        }
+        Some(Self::normalize_type_name(candidate))
+    }
+
     /// Detectează pattern-ul: T::from_val(env, &val_from_i64(var))
     /// Returns: Some((type_name, var_name))
     fn extract_from_val_conversion(line: &str) -> Option<(String, String)> {
@@ -60,14 +81,7 @@ impl ConversionEliminationPattern {
             return None;
         }
 
-        // Extract type: XXXX::from_val
-        let from_val_pos = line.find("::from_val(")?;
-        let before = &line[..from_val_pos];
-        let type_start = before
-            .rfind(|c: char| !c.is_alphanumeric() && c != '_' && c != '<' && c != '>' && c != ':')
-            .map(|p| p + 1)
-            .unwrap_or(0);
-        let type_name = before[type_start..].trim().to_string();
+        let type_name = Self::extract_type_name_before_anchor(line, "::from_val(")?;
 
         // Extract var: &val_from_i64(XXXX)
         let val_from_start = line.find("&val_from_i64(")?;
@@ -84,14 +98,7 @@ impl ConversionEliminationPattern {
             return None;
         }
 
-        // Extract type
-        let try_from_pos = line.find("::try_from_val(")?;
-        let before = &line[..try_from_pos];
-        let type_start = before
-            .rfind(|c: char| !c.is_alphanumeric() && c != '_' && c != '<' && c != '>' && c != ':')
-            .map(|p| p + 1)
-            .unwrap_or(0);
-        let type_name = before[type_start..].trim();
+        let type_name = Self::extract_type_name_before_anchor(line, "::try_from_val(")?;
 
         // Extract var
         let val_from_start = line.find("&val_from_i64(")?;
@@ -99,7 +106,46 @@ impl ConversionEliminationPattern {
         let paren_end = after_val_from.find(')')?;
         let var_name = after_val_from[..paren_end].trim();
 
-        Some((type_name.to_string(), var_name.to_string()))
+        Some((type_name, var_name.to_string()))
+    }
+
+    fn normalize_type_name(raw: &str) -> String {
+        let mut s = raw.trim().to_string();
+        while matches!(
+            s.chars().next(),
+            Some('(' | '!' | '&' | '[' | '{' | '|' | '+' | '-' | '*')
+        ) {
+            s.remove(0);
+        }
+        while matches!(
+            s.chars().last(),
+            Some(')' | ']' | '}' | ',' | ';' | ':' | '|' | '&' | '!')
+        ) {
+            s.pop();
+        }
+        // Drop trailing unmatched angle brackets caused by partial parsing.
+        let mut balance = 0i32;
+        let mut cleaned = String::new();
+        for ch in s.chars() {
+            if ch == '<' {
+                balance += 1;
+                cleaned.push(ch);
+            } else if ch == '>' {
+                if balance > 0 {
+                    balance -= 1;
+                    cleaned.push(ch);
+                }
+            } else {
+                cleaned.push(ch);
+            }
+        }
+        let mut out = cleaned.trim().to_string();
+        if !out.contains('<') {
+            while out.ends_with('>') {
+                out.pop();
+            }
+        }
+        out
     }
 }
 
@@ -146,22 +192,8 @@ impl Pattern for ConversionEliminationPattern {
                         .unwrap_or(after_let)
                         .trim_start();
                     if let Some(eq_pos) = after_let.find(" = ") {
-                        let dest_var = after_let[..eq_pos].trim();
-
-                        // Track that source_var is actually of type_name
+                        let _dest_var = after_let[..eq_pos].trim();
                         var_types.insert(source_var.clone(), type_name.clone());
-
-                        // Only add TODO if not already present
-                        if !new_body
-                            .last()
-                            .map_or(false, |l| l.contains("// TODO: Conversion"))
-                        {
-                            changed = true;
-                            new_body.push(format!(
-                                "{}// TODO: Conversion from {} to {} for {}",
-                                indent_str, source_var, type_name, dest_var
-                            ));
-                        }
                         new_body.push(line.clone());
                         continue;
                     }
@@ -169,17 +201,7 @@ impl Pattern for ConversionEliminationPattern {
 
                 // Extract: let res_val = ... val_to_i64(x.into_val(&env))
                 if let Some(source_var) = Self::extract_into_val_conversion(trimmed) {
-                    // This is a redundant conversion - x is the real value
-                    if !new_body
-                        .last()
-                        .map_or(false, |l| l.contains("// TODO: Remove val_to_i64"))
-                    {
-                        changed = true;
-                        new_body.push(format!(
-                            "{}// TODO: Remove val_to_i64 conversion, use {} directly",
-                            indent_str, source_var
-                        ));
-                    }
+                    let _ = source_var;
                     new_body.push(line.clone());
                     continue;
                 }
@@ -189,16 +211,6 @@ impl Pattern for ConversionEliminationPattern {
             if trimmed.contains("::try_from_val(") && trimmed.contains(".is_ok()") {
                 if let Some((type_name, var_name)) = Self::extract_type_check(trimmed) {
                     var_types.insert(var_name.clone(), type_name.clone());
-                    if !new_body
-                        .last()
-                        .map_or(false, |l| l.contains("// TODO: Type check"))
-                    {
-                        changed = true;
-                        new_body.push(format!(
-                            "{}// TODO: Type check for {} as {}",
-                            indent_str, var_name, type_name
-                        ));
-                    }
                     new_body.push(line.clone());
                     continue;
                 }

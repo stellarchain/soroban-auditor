@@ -21,6 +21,23 @@ impl UndefinedHelpersPattern {
     fn is_undefined_helper_call(line: &str) -> bool {
         let trimmed = line.trim();
 
+        // Never touch control-flow heads. Removing these can orphan `else` blocks.
+        if trimmed.starts_with("if ")
+            || trimmed.starts_with("while ")
+            || trimmed.starts_with("match ")
+            || trimmed.starts_with("return ")
+        {
+            return false;
+        }
+
+        // Only rewrite standalone call statements or direct call let-bindings.
+        // Avoid control-expression bindings like `let x = if ... { ... } else { ... }`.
+        let is_direct_self_stmt = trimmed.starts_with("self.");
+        let is_direct_let_self_call = trimmed.starts_with("let ") && trimmed.contains("= self.");
+        if !(is_direct_self_stmt || is_direct_let_self_call) {
+            return false;
+        }
+
         // List of known undefined helpers
         let undefined_helpers = [
             "self.entry_decode(",
@@ -53,32 +70,50 @@ impl Pattern for UndefinedHelpersPattern {
         }
 
         let mut changed = false;
-        let new_body: Vec<String> = block
-            .body
-            .iter()
-            .filter_map(|line| {
-                let trimmed = line.trim();
+        let mut new_body: Vec<String> = Vec::with_capacity(block.body.len());
+        let mut i = 0usize;
+        while i < block.body.len() {
+            let line = &block.body[i];
+            let trimmed = line.trim();
 
-                // Skip if already has TODO comment (prevent duplicates in iterative mode)
-                if trimmed.starts_with("// TODO:") {
-                    return Some(line.clone());
-                }
+            // Skip if already has TODO comment (prevent duplicates in iterative mode)
+            if trimmed.starts_with("// TODO:") {
+                new_body.push(line.clone());
+                i += 1;
+                continue;
+            }
 
-                if Self::is_undefined_helper_call(line) {
-                    changed = true;
-                    // Comment out the helper call instead of removing it
-                    // This helps with debugging and understanding what was removed
-                    let indent = line.len() - line.trim_start().len();
-                    Some(format!(
-                        "{}// TODO: helper function call removed: {}",
-                        " ".repeat(indent),
-                        trimmed
-                    ))
-                } else {
-                    Some(line.clone())
+            if Self::is_undefined_helper_call(line) {
+                changed = true;
+                let indent = line.len() - line.trim_start().len();
+                new_body.push(format!(
+                    "{}// TODO: helper function call removed: {}",
+                    " ".repeat(indent),
+                    trimmed
+                ));
+
+                // If this is a multiline call, skip remaining argument lines until call end.
+                // This prevents orphan lines like:
+                //   env,
+                //   arg1,
+                // );
+                if !trimmed.contains(");") {
+                    i += 1;
+                    while i < block.body.len() {
+                        let t = block.body[i].trim();
+                        if t == ");" || t.ends_with(");") {
+                            break;
+                        }
+                        i += 1;
+                    }
                 }
-            })
-            .collect();
+                i += 1;
+                continue;
+            }
+
+            new_body.push(line.clone());
+            i += 1;
+        }
 
         if !changed {
             return None;

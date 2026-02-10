@@ -12,6 +12,20 @@ pub fn format_type_ident(raw: &str) -> String {
     while s.contains("  ") {
         s = s.replace("  ", " ");
     }
+    // Normalize tuple/type artifacts early, at type-format source, so
+    // signature postprocess doesn't need to repair them later.
+    while s.contains(",),") {
+        s = s.replace(",),", "),");
+    }
+    while s.contains(",) ->") {
+        s = s.replace(",) ->", ") ->");
+    }
+    while s.contains(",) {") {
+        s = s.replace(",) {", ") {");
+    }
+    while s.contains(",)") {
+        s = s.replace(",)", ")");
+    }
     s
 }
 

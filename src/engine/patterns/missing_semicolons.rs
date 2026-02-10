@@ -13,6 +13,26 @@ impl MissingSemicolonsPattern {
         Self
     }
 
+    fn is_continuation_line(trimmed: &str) -> bool {
+        if trimmed.ends_with('(') || trimmed.ends_with('[') {
+            return true;
+        }
+
+        let mut paren = 0i32;
+        let mut bracket = 0i32;
+        for ch in trimmed.chars() {
+            match ch {
+                '(' => paren += 1,
+                ')' => paren -= 1,
+                '[' => bracket += 1,
+                ']' => bracket -= 1,
+                _ => {}
+            }
+        }
+
+        paren > 0 || bracket > 0
+    }
+
     fn needs_semicolon(line: &str) -> bool {
         let trimmed = line.trim();
 
@@ -28,6 +48,11 @@ impl MissingSemicolonsPattern {
 
         // Skip if empty or comment
         if trimmed.is_empty() || trimmed.starts_with("//") {
+            return false;
+        }
+
+        // Skip multiline continuation lines (e.g. split function calls)
+        if Self::is_continuation_line(trimmed) {
             return false;
         }
 
@@ -125,5 +150,26 @@ mod tests {
         let result = pattern.apply(&block).unwrap();
         assert!(result.body[0].ends_with(";"));
         assert_eq!(result.body[1], "    let x = 42;");
+    }
+
+    #[test]
+    fn test_does_not_add_semicolon_to_multiline_call_head() {
+        let pattern = MissingSemicolonsPattern::new();
+        let block = FunctionBlock {
+            header: "pub fn test() {".to_string(),
+            body: vec![
+                "    let var8 = self.func27(".to_string(),
+                "        env,".to_string(),
+                "    )".to_string(),
+            ],
+            footer: "}".to_string(),
+            indent: "    ".to_string(),
+            name: "test".to_string(),
+        };
+
+        let result = pattern.apply(&block);
+        if let Some(block) = result {
+            assert_eq!(block.body[0], "    let var8 = self.func27(");
+        }
     }
 }

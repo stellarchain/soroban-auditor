@@ -9,12 +9,15 @@ mod decompile;
 mod engine;
 mod expr_builder;
 mod fingerprint;
+mod fingerprint_registry;
 mod format;
 mod forwarder;
+mod helper_semantics;
 mod precedence;
 mod reorder_analysis;
 mod rewrites;
 mod sdk;
+mod semantic_resolver;
 mod soroban;
 mod wasm_ir;
 

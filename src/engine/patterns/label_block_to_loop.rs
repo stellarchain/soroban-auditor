@@ -47,6 +47,16 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
                 body,
                 footer,
             } => {
+                if label.starts_with("__sp") {
+                    out.push(Node::Block {
+                        kind: BlockKind::Other,
+                        label: Some(label),
+                        header,
+                        body: rewrite(body, changed),
+                        footer,
+                    });
+                    continue;
+                }
                 let mut new_body = rewrite(body, changed);
                 if !contains_continue_label(&new_body, &label)
                     && contains_break_label(&new_body, &label)

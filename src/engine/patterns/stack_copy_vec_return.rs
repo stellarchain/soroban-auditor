@@ -76,7 +76,6 @@ impl Pattern for StackCopyVecReturnPattern {
         while j + 2 < new_body.len() {
             let line = new_body[j].trim();
             let next = new_body[j + 1].trim();
-            let next2 = new_body[j + 2].trim();
             let Some((tmp_name, raw_arg1, raw_arg2)) = parse_vec_builder_assignment(line) else {
                 j += 1;
                 continue;
@@ -92,16 +91,28 @@ impl Pattern for StackCopyVecReturnPattern {
                 j += 1;
                 continue;
             }
-            let Some(ret_name) = parse_simple_return(next2) else {
+
+            let mut ret_idx: Option<usize> = None;
+            let lookahead_end = usize::min(new_body.len(), j + 7);
+            for idx in (j + 2)..lookahead_end {
+                let cur = new_body[idx].trim();
+                if let Some(ret_name) = parse_simple_return(cur) {
+                    if ret_name == assigned_name.0 {
+                        ret_idx = Some(idx);
+                    }
+                    break;
+                }
+                if cur.contains(&tmp_name) || cur.contains(&assigned_name.0) {
+                    ret_idx = None;
+                    break;
+                }
+            }
+            let Some(ret_idx) = ret_idx else {
                 j += 1;
                 continue;
             };
-            if ret_name != assigned_name.0 {
-                j += 1;
-                continue;
-            }
 
-            let indent = new_body[j]
+            let indent = new_body[ret_idx]
                 .chars()
                 .take_while(|c| c.is_whitespace())
                 .collect::<String>();
@@ -111,7 +122,10 @@ impl Pattern for StackCopyVecReturnPattern {
                 converter(&arg1),
                 converter(&arg2)
             );
-            new_body.splice(j..=j + 2, vec![replacement]);
+            new_body.remove(j + 1); // remove alias assignment (e.g., to = var5)
+            new_body.remove(j); // remove temp vec builder
+            let adj_ret_idx = ret_idx - 2;
+            new_body[adj_ret_idx] = replacement;
             changed = true;
             j += 1;
         }
@@ -145,6 +159,46 @@ impl Pattern for StackCopyVecReturnPattern {
             k = loop_end + 1;
         }
 
+        // Collapse labeled stack-copy loops that guard a vec-return path:
+        // 'labelX: loop { if ... { (copy loop) ; global0=...; return vec![..] } ... }
+        let mut p = 0usize;
+        while p < new_body.len() {
+            let trimmed = new_body[p].trim();
+            if !trimmed.starts_with("'label") || !trimmed.ends_with("loop {") {
+                p += 1;
+                continue;
+            }
+            let Some(loop_end) = find_block_end(&new_body, p) else {
+                p += 1;
+                continue;
+            };
+            let slice = &new_body[p..=loop_end];
+            if let Some(replacement) = collapse_labeled_stack_copy_vec_loop(slice) {
+                new_body.splice(p..=loop_end, replacement);
+                changed = true;
+                p += 1;
+                continue;
+            }
+            p = loop_end + 1;
+        }
+
+        // Fallback: detect stack-seeded pair (`slot_var*_0_i64`, `slot_var*_8_i64`)
+        // followed by empty Vec construction and direct return.
+        if let Some((a0, a1, ret_start, ret_end)) = find_slot_seeded_vec_return(&new_body) {
+            let indent = new_body[ret_start]
+                .chars()
+                .take_while(|c| c.is_whitespace())
+                .collect::<String>();
+            let replacement = format!(
+                "{}return vec![&env, {}, {}];",
+                indent,
+                converter(&a0),
+                converter(&a1)
+            );
+            new_body.splice(ret_start..=ret_end, vec![replacement]);
+            changed = true;
+        }
+
         if !changed {
             return None;
         }
@@ -159,6 +213,52 @@ impl Pattern for StackCopyVecReturnPattern {
     }
 }
 
+fn find_slot_seeded_vec_return(lines: &[String]) -> Option<(String, String, usize, usize)> {
+    let mut slot0: Option<String> = None;
+    let mut slot8: Option<String> = None;
+    let mut slot_base: Option<String> = None;
+    let mut vec_line_idx: Option<usize> = None;
+    let mut ret_line_idx: Option<usize> = None;
+
+    for (i, line) in lines.iter().enumerate() {
+        let t = line.trim();
+        if t.contains(" = val_to_i64(Vec::<Val>::new(env).into_val(env))") {
+            vec_line_idx = Some(i);
+        }
+        if t.starts_with("return ") && t.ends_with(';') {
+            ret_line_idx = Some(i);
+        }
+        if let Some((lhs, rhs)) = parse_simple_assignment(t) {
+            if lhs.starts_with("slot_var") && lhs.ends_with("_0_i64") && rhs.ends_with(" as i64") {
+                let base = lhs.trim_end_matches("_0_i64");
+                slot_base = Some(base.to_string());
+                slot0 = Some(rhs.trim_end_matches(" as i64").trim().to_string());
+            } else if lhs.starts_with("slot_var")
+                && lhs.ends_with("_8_i64")
+                && rhs.ends_with(" as i64")
+            {
+                let base = lhs.trim_end_matches("_8_i64");
+                slot_base = Some(base.to_string());
+                slot8 = Some(rhs.trim_end_matches(" as i64").trim().to_string());
+            }
+        }
+    }
+
+    let vec_idx = vec_line_idx?;
+    let ret_idx = ret_line_idx?;
+    if ret_idx <= vec_idx {
+        return None;
+    }
+    let base = slot_base?;
+    let has_pair = lines.iter().any(|l| l.trim().starts_with(&format!("{base}_0_i64")))
+        && lines.iter().any(|l| l.trim().starts_with(&format!("{base}_8_i64")));
+    if !has_pair {
+        return None;
+    }
+
+    Some((slot0?, slot8?, vec_idx, ret_idx))
+}
+
 fn detect_vec_element_converter(
     header: &str,
 ) -> Option<Box<dyn Fn(&str) -> String + Send + Sync + 'static>> {
@@ -168,6 +268,9 @@ fn detect_vec_element_converter(
     if header.contains("Vec<soroban_sdk::String>") || header.contains("Vec<String>") {
         let string_params = string_params.clone();
         return Some(Box::new(move |v: &str| {
+            if v.starts_with("String::from_str(") || v.starts_with("String::from_val(") {
+                return v.to_string();
+            }
             if string_params.iter().any(|p| p == v) {
                 return v.to_string();
             }
@@ -177,6 +280,12 @@ fn detect_vec_element_converter(
     if header.contains("Vec<soroban_sdk::Symbol>") || header.contains("Vec<Symbol>") {
         let symbol_params = symbol_params.clone();
         return Some(Box::new(move |v: &str| {
+            if v.starts_with("Symbol::from_str(")
+                || v.starts_with("Symbol::new(")
+                || v.starts_with("Symbol::from_val(")
+            {
+                return v.to_string();
+            }
             if symbol_params.iter().any(|p| p == v) {
                 return v.to_string();
             }
@@ -452,4 +561,50 @@ fn is_stack_copy_noise_loop(lines: &[String]) -> bool {
         }
     }
     has_mload && has_mstore
+}
+
+fn collapse_labeled_stack_copy_vec_loop(lines: &[String]) -> Option<Vec<String>> {
+    let mut has_mload = false;
+    let mut has_mstore = false;
+    let mut has_copy_loop = false;
+    let mut vec_return: Option<String> = None;
+    let mut global_restore: Option<String> = None;
+
+    for raw in lines {
+        let t = raw.trim();
+        if t.contains("mload64!(") {
+            has_mload = true;
+        }
+        if t.contains("mstore64!(") {
+            has_mstore = true;
+        }
+        if t == "loop {" || t.starts_with("'label") {
+            has_copy_loop = true;
+        }
+        if t.starts_with("return vec![&env,") {
+            if vec_return.is_some() {
+                return None;
+            }
+            vec_return = Some(t.to_string());
+        }
+        if t.starts_with("self.global0 = ") {
+            // Keep the last restore before return.
+            global_restore = Some(t.to_string());
+        }
+    }
+
+    if !has_mload || !has_mstore || !has_copy_loop {
+        return None;
+    }
+    let vec_return = vec_return?;
+    let global_restore = global_restore?;
+    let indent = lines
+        .first()
+        .map(|l| l.chars().take_while(|c| c.is_whitespace()).collect::<String>())
+        .unwrap_or_default();
+
+    Some(vec![
+        format!("{indent}{global_restore}"),
+        format!("{indent}{vec_return}"),
+    ])
 }

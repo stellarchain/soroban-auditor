@@ -25,7 +25,7 @@ pub fn build_pattern_context_data(
     code: &CodeSection,
     functions: &[crate::wasm_ir::Function],
 ) -> PatternContextData {
-    let export_name = mangle_fn_name(export.field());
+    let export_name = normalize_special_export_name(mangle_fn_name(export.field()));
     let (
         has_vec_new,
         uses_string_new,
@@ -132,6 +132,14 @@ pub fn build_pattern_context_data(
         uses_put_contract_data,
         uses_contract_event,
         uses_update_current_contract_wasm,
+    }
+}
+
+fn normalize_special_export_name(name: String) -> String {
+    match name.as_str() {
+        "___constructor" => "__constructor".to_string(),
+        "___check_auth" => "__check_auth".to_string(),
+        _ => name,
     }
 }
 
