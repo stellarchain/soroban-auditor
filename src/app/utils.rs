@@ -1,109 +1,22 @@
-use crate::soroban::common::take_common_module;
-use crate::sdk::{get_backend, ContractSpecs, FunctionContractSpec};
-use crate::wasm_ir::{mangle_fn_name, to_rs_type, Function, Global};
 use crate::format::format_spec_tokens;
+use crate::forwarder::{collect_forwarder_args, CallForwarder};
+use crate::sdk::{get_backend, ContractSpecs, FunctionContractSpec};
+use crate::soroban::common::take_common_module;
+use crate::wasm_ir::{mangle_fn_name, to_rs_type, Function, Global};
 use parity_wasm::elements::{
-    External, ExportSection, FunctionNameSubsection, ImportSection, Instruction, Module, Type,
+    ExportSection, External, FunctionNameSubsection, ImportSection, Instruction, Module, Type,
     TypeSection,
 };
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
-use std::path::{Path, PathBuf};
-use std::fs;
+use std::path::Path;
 
-fn collect_libs(dir: &Path, out: &mut Vec<PathBuf>) {
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                collect_libs(&path, out);
-            } else if path.file_name().and_then(|n| n.to_str()) == Some("lib.rs") {
-                out.push(path);
-            }
-        }
-    }
-}
-
-fn extract_contract_name(contents: &str) -> Option<String> {
-    let mut saw_contract = false;
-    for line in contents.lines() {
-        let line = line.trim();
-        if line.starts_with("#[contract") {
-            saw_contract = true;
-            continue;
-        }
-        if saw_contract {
-            if let Some(rest) = line.strip_prefix("pub struct ") {
-                return rest
-                    .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-                    .next()
-                    .map(|s| s.to_string());
-            }
-            if let Some(rest) = line.strip_prefix("struct ") {
-                return rest
-                    .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-                    .next()
-                    .map(|s| s.to_string());
-            }
-        }
-    }
-    None
-}
-
-fn normalize_stem(stem: &str) -> String {
-    let mut name = stem.to_string();
-    if let Some(rest) = name.strip_prefix("soroban_") {
-        name = rest.to_string();
-    }
-    if let Some(rest) = name.strip_suffix("_contract") {
-        name = rest.to_string();
-    }
-    if let Some(rest) = name.strip_suffix("_optimized") {
-        name = rest.to_string();
-    }
-    name = name.replace('-', "_");
-    while name.contains("__") {
-        name = name.replace("__", "_");
-    }
-    name
-}
-
-fn candidate_key(base: &Path, lib: &Path) -> Option<String> {
-    let rel = lib.strip_prefix(base).ok()?;
-    let mut parts: Vec<String> = rel
-        .components()
-        .filter_map(|c| c.as_os_str().to_str().map(|s| s.to_string()))
-        .collect();
-    if parts.len() >= 3 && parts[parts.len() - 1] == "lib.rs" && parts[parts.len() - 2] == "src"
-    {
-        parts.truncate(parts.len() - 2);
-    }
-    if parts.is_empty() {
-        return None;
-    }
-    Some(normalize_stem(&parts.join("_")))
-}
-
-#[derive(Debug, Clone)]
-pub struct InternalForwarder {
-    pub name: String,
-    pub args: Vec<ForwardArg>,
-}
-
-#[derive(Debug, Clone)]
-pub enum ForwardArg {
-    Local(usize),
-    PackedU32(usize),
-    I32(i32),
-    I64(i64),
-}
-
-pub fn build_internal_call_forwarders(
+pub fn build_call_forwarders(
     code: &parity_wasm::elements::CodeSection,
     fns: &parity_wasm::elements::FunctionSection,
     import_count: usize,
     functions: &[Function],
-) -> BTreeMap<u32, InternalForwarder> {
+) -> BTreeMap<u32, CallForwarder> {
     let mut out = BTreeMap::new();
     for (i, (body, _func)) in code.bodies().iter().zip(fns.entries()).enumerate() {
         let fn_index = import_count + i;
@@ -118,132 +31,23 @@ pub fn build_internal_call_forwarders(
             continue;
         }
         let call_instr = instrs.last().unwrap();
-        let imported_index = match call_instr {
+        let target_index = match call_instr {
             Instruction::Call(n) if (*n as usize) < import_count => *n,
             _ => continue,
         };
-        let import_name = functions[imported_index as usize].name.clone();
-        let import_params = functions[imported_index as usize].ty.params().len();
-        let mut args = Vec::new();
-        let mut ok = true;
-        let mut i = 0usize;
+        let forwarder_params = functions[target_index as usize].ty.params().len();
         let insts = &instrs[..instrs.len() - 1];
-        while i < insts.len() {
-            if let Some(Instruction::GetLocal(n)) = insts.get(i) {
-                if matches!(insts.get(i + 1), Some(Instruction::I64ExtendSI32) | Some(Instruction::I64ExtendUI32))
-                    && matches!(insts.get(i + 2), Some(Instruction::I64Const(32)))
-                    && matches!(insts.get(i + 3), Some(Instruction::I64Shl))
-                    && matches!(insts.get(i + 4), Some(Instruction::I64Const(4)))
-                    && matches!(insts.get(i + 5), Some(Instruction::I64Or))
-                {
-                    args.push(ForwardArg::PackedU32(*n as usize));
-                    i += 6;
-                    continue;
-                }
-            }
-            let instr = insts.get(i).unwrap();
-            match instr {
-                Instruction::GetLocal(n) => args.push(ForwardArg::Local(*n as usize)),
-                Instruction::I32Const(v) => args.push(ForwardArg::I32(*v)),
-                Instruction::I64Const(v) => args.push(ForwardArg::I64(*v)),
-                _ => {
-                    ok = false;
-                    break;
-                }
-            }
-            i += 1;
+        if let Some(args) = collect_forwarder_args(insts, forwarder_params) {
+            out.insert(
+                fn_index as u32,
+                CallForwarder {
+                    target: target_index,
+                    args,
+                },
+            );
         }
-        if !ok || args.len() < import_params {
-            continue;
-        }
-        if args.len() > import_params {
-            args = args[args.len() - import_params..].to_vec();
-        }
-        out.insert(
-            fn_index as u32,
-            InternalForwarder {
-                name: import_name,
-                args,
-            },
-        );
     }
     out
-}
-
-pub fn find_source_for_contract(contract_name: &str, input: &Path) -> Option<PathBuf> {
-    let base = Path::new("tests/soroban-examples");
-    if !base.exists() {
-        return None;
-    }
-    let mut libs = Vec::new();
-    collect_libs(base, &mut libs);
-
-    let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-    let target = normalize_stem(stem);
-
-    let mut exact_matches = Vec::new();
-    let mut contains_matches = Vec::new();
-    for lib in libs.iter() {
-        if let Some(key) = candidate_key(base, lib) {
-            if key == target {
-                exact_matches.push(lib.clone());
-            } else if key.contains(&target) || target.contains(&key) {
-                contains_matches.push(lib.clone());
-            }
-        }
-    }
-    if exact_matches.len() == 1 {
-        return exact_matches.into_iter().next();
-    }
-    if exact_matches.len() > 1 {
-        let mut name_matches = Vec::new();
-        for lib in exact_matches.iter() {
-            if let Ok(contents) = fs::read_to_string(lib) {
-                if let Some(name) = extract_contract_name(&contents) {
-                    if name == contract_name {
-                        name_matches.push(lib.clone());
-                    }
-                }
-            }
-        }
-        if name_matches.len() == 1 {
-            return name_matches.into_iter().next();
-        }
-    }
-
-    if contains_matches.len() == 1 {
-        return contains_matches.into_iter().next();
-    }
-    if contains_matches.len() > 1 {
-        let mut name_matches = Vec::new();
-        for lib in contains_matches.iter() {
-            if let Ok(contents) = fs::read_to_string(lib) {
-                if let Some(name) = extract_contract_name(&contents) {
-                    if name == contract_name {
-                        name_matches.push(lib.clone());
-                    }
-                }
-            }
-        }
-        if name_matches.len() == 1 {
-            return name_matches.into_iter().next();
-        }
-    }
-
-    let mut name_matches = Vec::new();
-    for lib in libs {
-        if let Ok(contents) = fs::read_to_string(&lib) {
-            if let Some(name) = extract_contract_name(&contents) {
-                if name == contract_name {
-                    name_matches.push(lib);
-                }
-            }
-        }
-    }
-    if name_matches.len() == 1 {
-        return name_matches.into_iter().next();
-    }
-    None
 }
 
 pub fn is_const_expr_immutable_instead_of_const(opcodes: &[Instruction]) -> bool {
@@ -331,9 +135,15 @@ pub fn spec_type_flags(contract_specs: &ContractSpecs) -> SpecTypeFlags {
         .collect();
     SpecTypeFlags {
         has_datakey_type: spec_type_strings.iter().any(|t| t.contains("DataKey")),
-        has_allowance_value_type: spec_type_strings.iter().any(|t| t.contains("AllowanceValue")),
-        has_allowance_key_type: spec_type_strings.iter().any(|t| t.contains("AllowanceDataKey")),
-        has_token_metadata_type: spec_type_strings.iter().any(|t| t.contains("TokenMetadata")),
+        has_allowance_value_type: spec_type_strings
+            .iter()
+            .any(|t| t.contains("AllowanceValue")),
+        has_allowance_key_type: spec_type_strings
+            .iter()
+            .any(|t| t.contains("AllowanceDataKey")),
+        has_token_metadata_type: spec_type_strings
+            .iter()
+            .any(|t| t.contains("TokenMetadata")),
         has_signer_variant: spec_type_strings
             .iter()
             .any(|t| t.contains("Signer(") || t.contains("Signer (")),
@@ -474,7 +284,9 @@ pub fn parse_struct_defs(contract_specs: &ContractSpecs) -> Vec<StructDef> {
     let mut out = Vec::new();
     for ty in contract_specs.types() {
         let formatted = format_spec_tokens(&ty.to_string());
-        let Some(pos) = formatted.find("struct ") else { continue };
+        let Some(pos) = formatted.find("struct ") else {
+            continue;
+        };
         let after = &formatted[pos + "struct ".len()..];
         let name_end = after.find(|c: char| c == '{' || c.is_whitespace());
         let Some(name_end) = name_end else { continue };
@@ -650,7 +462,8 @@ pub fn build_globals<'a>(
         for entry in global_section.entries() {
             let ty = entry.global_type();
             let const_expr = entry.init_expr().code();
-            let is_mutable = ty.is_mutable() || is_const_expr_immutable_instead_of_const(const_expr);
+            let is_mutable =
+                ty.is_mutable() || is_const_expr_immutable_instead_of_const(const_expr);
             let name = if is_mutable {
                 format!("global{}", globals.len())
             } else {
@@ -684,7 +497,8 @@ pub fn build_spec_index(
     let mut spec_by_fn_index: HashMap<u32, FunctionContractSpec> = HashMap::new();
     for export in exports.entries() {
         if let &parity_wasm::elements::Internal::Function(fn_index) = export.internal() {
-            if let Some(spec_fn) = get_backend().find_function_specs(contract_specs, export.field()) {
+            if let Some(spec_fn) = get_backend().find_function_specs(contract_specs, export.field())
+            {
                 spec_by_fn_index.insert(fn_index, spec_fn);
             }
         }

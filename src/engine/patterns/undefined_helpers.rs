@@ -69,9 +69,11 @@ impl Pattern for UndefinedHelpersPattern {
                     // Comment out the helper call instead of removing it
                     // This helps with debugging and understanding what was removed
                     let indent = line.len() - line.trim_start().len();
-                    Some(format!("{}// TODO: helper function call removed: {}",
-                                " ".repeat(indent),
-                                trimmed))
+                    Some(format!(
+                        "{}// TODO: helper function call removed: {}",
+                        " ".repeat(indent),
+                        trimmed
+                    ))
                 } else {
                     Some(line.clone())
                 }

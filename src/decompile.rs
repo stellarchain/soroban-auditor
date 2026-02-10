@@ -1,7 +1,8 @@
 use crate::code_builder::transform_from_soroban_val_raw;
-use crate::sdk::{get_backend, ContractSpecs};
+use crate::sdk::{get_backend, ContractSpecs, SdkFunctionDetector};
 use crate::wasm_ir::{mangle_fn_name, Function};
 use parity_wasm::elements::{CodeSection, ExportSection, FuncBody, Instruction, Module};
+use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct BodyUsage {
@@ -28,6 +29,8 @@ pub struct BodyUsage {
     pub uses_put_contract_data: bool,
     pub uses_contract_event: bool,
     pub uses_update_current_contract_wasm: bool,
+    /// All SDK function calls detected (function_name -> call count)
+    pub sdk_function_calls: HashMap<String, usize>,
 }
 
 #[derive(Clone, Debug)]
@@ -38,11 +41,22 @@ pub struct DataSegment {
 
 pub fn scan_body(body: &FuncBody, import_count: usize, functions: &[Function]) -> BodyUsage {
     let mut usage = BodyUsage::default();
+
+    // Initialize SDK detector once for comprehensive detection
+    let sdk_detector = SdkFunctionDetector::default();
+
     for instr in body.code().elements() {
         if let Instruction::Call(idx) = instr {
             let idx = *idx as usize;
             if idx < import_count {
-                match functions[idx].name.as_str() {
+                let fn_name = &functions[idx].name;
+
+                // Track ALL SDK function calls comprehensively
+                if sdk_detector.is_sdk_function(fn_name) {
+                    *usage.sdk_function_calls.entry(fn_name.clone()).or_insert(0) += 1;
+                }
+
+                match fn_name.as_str() {
                     "vec_new_from_linear_memory" => usage.has_vec_new = true,
                     "string_new_from_linear_memory" => usage.uses_string_new = true,
                     "symbol_new_from_linear_memory" => usage.uses_symbol_new = true,
@@ -362,17 +376,24 @@ pub fn collect_imports(
                             .enumerate()
                             .filter_map(|(i, t)| if t.contains("i128") { Some(i) } else { None })
                             .collect();
-                        let swap_shape =
-                            spec_fn.inputs().len() == 8 && addr_indices.len() == 4 && i128_indices.len() == 4;
+                        let swap_shape = spec_fn.inputs().len() == 8
+                            && addr_indices.len() == 4
+                            && i128_indices.len() == 4;
                         if swap_shape {
                             needs_token = true;
                             needs_into_val = true;
                         }
-                        let move_token_shape =
-                            spec_fn.inputs().len() == 5 && addr_indices.len() == 3 && i128_indices.len() == 2;
-                        let has_transfer_symbol =
-                            usage.symbol_literals.iter().any(|s| s.as_str() == "transfer");
-                        if move_token_shape && usage.uses_current_contract_address && has_transfer_symbol {
+                        let move_token_shape = spec_fn.inputs().len() == 5
+                            && addr_indices.len() == 3
+                            && i128_indices.len() == 2;
+                        let has_transfer_symbol = usage
+                            .symbol_literals
+                            .iter()
+                            .any(|s| s.as_str() == "transfer");
+                        if move_token_shape
+                            && usage.uses_current_contract_address
+                            && has_transfer_symbol
+                        {
                             needs_token = true;
                         }
                     }

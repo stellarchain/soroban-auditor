@@ -86,11 +86,7 @@ fn rewrite(nodes: Vec<Node>, defined: &mut HashSet<String>, changed: &mut bool) 
     out
 }
 
-fn try_collapse_loop(
-    header: &str,
-    body: &[Node],
-    defined: &mut HashSet<String>,
-) -> Option<Node> {
+fn try_collapse_loop(header: &str, body: &[Node], defined: &mut HashSet<String>) -> Option<Node> {
     if !header.trim_start().starts_with("loop ") {
         return None;
     }
@@ -100,7 +96,10 @@ fn try_collapse_loop(
         return None;
     }
     let if_node = match &nodes[0] {
-        Node::Block { kind: BlockKind::If, .. } => nodes[0].clone(),
+        Node::Block {
+            kind: BlockKind::If,
+            ..
+        } => nodes[0].clone(),
         _ => return None,
     };
     match &nodes[1] {
@@ -116,7 +115,10 @@ fn try_collapse_loop(
     let mut if_node = if_node;
     rewrite_breaks_to_label(&mut if_node, &label, 0);
 
-    let indent = header.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+    let indent = header
+        .chars()
+        .take_while(|c| c.is_whitespace())
+        .collect::<String>();
     let else_block = Node::Block {
         kind: BlockKind::Else,
         label: None,
@@ -147,11 +149,17 @@ fn fresh_label(defined: &HashSet<String>) -> String {
 fn collect_defined_labels(nodes: &[Node], defined: &mut HashSet<String>) {
     for node in nodes {
         match node {
-            Node::Block { label: Some(label), body, .. } => {
+            Node::Block {
+                label: Some(label),
+                body,
+                ..
+            } => {
                 defined.insert(label.clone());
                 collect_defined_labels(body, defined);
             }
-            Node::Block { label: None, body, .. } => collect_defined_labels(body, defined),
+            Node::Block {
+                label: None, body, ..
+            } => collect_defined_labels(body, defined),
             Node::Line(_) => {}
         }
     }
@@ -166,7 +174,11 @@ fn rewrite_breaks_to_label(node: &mut Node, label: &str, loop_depth: usize) {
             }
         }
         Node::Block { kind, body, .. } => {
-            let next_depth = if *kind == BlockKind::Loop { loop_depth + 1 } else { loop_depth };
+            let next_depth = if *kind == BlockKind::Loop {
+                loop_depth + 1
+            } else {
+                loop_depth
+            };
             for child in body {
                 rewrite_breaks_to_label(child, label, next_depth);
             }
@@ -178,8 +190,13 @@ fn contains_continue_at_depth0(node: &Node, loop_depth: usize) -> bool {
     match node {
         Node::Line(line) => loop_depth == 0 && line.trim() == "continue;",
         Node::Block { kind, body, .. } => {
-            let next_depth = if *kind == BlockKind::Loop { loop_depth + 1 } else { loop_depth };
-            body.iter().any(|n| contains_continue_at_depth0(n, next_depth))
+            let next_depth = if *kind == BlockKind::Loop {
+                loop_depth + 1
+            } else {
+                loop_depth
+            };
+            body.iter()
+                .any(|n| contains_continue_at_depth0(n, next_depth))
         }
     }
 }

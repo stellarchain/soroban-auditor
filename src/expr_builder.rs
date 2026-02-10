@@ -136,10 +136,10 @@ impl fmt::Display for Formatted {
         if self.inner_precedence > self.outer_precedence
             || (self.inner_precedence == precedence::COMPARISON
                 && self.outer_precedence == precedence::COMPARISON)
-            || (self.is_left && self.outer_precedence == precedence::COMPARISON
+            || (self.is_left
+                && self.outer_precedence == precedence::COMPARISON
                 && self.inner_precedence == precedence::AS)
         {
-
             write!(f, "({})", self.s)
         } else {
             write!(f, "{}", self.s)

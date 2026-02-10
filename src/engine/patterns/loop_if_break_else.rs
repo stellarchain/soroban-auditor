@@ -61,9 +61,21 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
                     footer,
                 });
             }
-            Node::Block { kind, label, header, body, footer } => {
+            Node::Block {
+                kind,
+                label,
+                header,
+                body,
+                footer,
+            } => {
                 let new_body = rewrite(body, changed);
-                out.push(Node::Block { kind, label, header, body: new_body, footer });
+                out.push(Node::Block {
+                    kind,
+                    label,
+                    header,
+                    body: new_body,
+                    footer,
+                });
             }
             Node::Line(line) => out.push(Node::Line(line)),
         }
@@ -85,7 +97,10 @@ fn try_loop_if_break_else(header: &str, body: &[Node]) -> Option<Node> {
                     idx += 1;
                     continue;
                 }
-                if line.trim().starts_with("let ") || line.trim().starts_with("slot_") || line.contains("mload") {
+                if line.trim().starts_with("let ")
+                    || line.trim().starts_with("slot_")
+                    || line.contains("mload")
+                {
                     prefix.push(body[idx].clone());
                     idx += 1;
                     continue;
@@ -96,7 +111,12 @@ fn try_loop_if_break_else(header: &str, body: &[Node]) -> Option<Node> {
         }
     }
     let if_block = match body.get(idx) {
-        Some(Node::Block { kind: BlockKind::If, header, body, .. }) => (header, body),
+        Some(Node::Block {
+            kind: BlockKind::If,
+            header,
+            body,
+            ..
+        }) => (header, body),
         _ => return None,
     };
     let mut if_body = if_block.1.clone();
@@ -110,7 +130,10 @@ fn try_loop_if_break_else(header: &str, body: &[Node]) -> Option<Node> {
     if contains_break_or_continue_outside_loops(&else_body) {
         return None;
     }
-    let indent = header.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+    let indent = header
+        .chars()
+        .take_while(|c| c.is_whitespace())
+        .collect::<String>();
     let if_node = Node::Block {
         kind: BlockKind::If,
         label: None,
@@ -159,11 +182,18 @@ fn contains_break_or_continue_outside_loops(nodes: &[Node]) -> bool {
         match node {
             Node::Line(line) => {
                 let t = line.trim();
-                if t == "break;" || t == "continue;" || t.starts_with("break '") || t.starts_with("continue '") {
+                if t == "break;"
+                    || t == "continue;"
+                    || t.starts_with("break '")
+                    || t.starts_with("continue '")
+                {
                     return true;
                 }
             }
-            Node::Block { kind: BlockKind::Loop, .. } => {
+            Node::Block {
+                kind: BlockKind::Loop,
+                ..
+            } => {
                 // Ignore break/continue inside nested loops.
             }
             Node::Block { body, .. } => {

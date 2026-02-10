@@ -112,7 +112,10 @@ fn try_guard_tail(label: &str, header: &str, body: &[Node]) -> Option<Vec<Node>>
         return None;
     }
 
-    let indent = header.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+    let indent = header
+        .chars()
+        .take_while(|c| c.is_whitespace())
+        .collect::<String>();
     let flag = format!("__exit_{}", label);
     let mut out: Vec<Node> = Vec::new();
     out.push(Node::Line(format!("{indent}let mut {flag}: i32 = 0;")));
@@ -150,7 +153,10 @@ fn rewrite_breaks_to_child(node: &mut Node, label: &str, child_label: &str, flag
         Node::Line(line) => {
             let trimmed = line.trim();
             if trimmed == break_target {
-                let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                let indent = line
+                    .chars()
+                    .take_while(|c| c.is_whitespace())
+                    .collect::<String>();
                 *line = format!("{indent}{flag} = 1; break '{};", child_label);
             }
         }
@@ -238,14 +244,23 @@ fn dedent_node(mut node: Node, indent: &str) -> Node {
                 *line = format!("{}{}", indent, &line[prefix.len()..]);
             }
         }
-        Node::Block { header, body, footer, .. } => {
+        Node::Block {
+            header,
+            body,
+            footer,
+            ..
+        } => {
             if header.starts_with(&prefix) {
                 *header = format!("{}{}", indent, &header[prefix.len()..]);
             }
             if footer.starts_with(&prefix) {
                 *footer = format!("{}{}", indent, &footer[prefix.len()..]);
             }
-            let new_body = body.iter().cloned().map(|n| dedent_node(n, indent)).collect();
+            let new_body = body
+                .iter()
+                .cloned()
+                .map(|n| dedent_node(n, indent))
+                .collect();
             *body = new_body;
         }
     }

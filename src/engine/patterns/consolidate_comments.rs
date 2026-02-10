@@ -40,7 +40,8 @@ impl ConsolidateCommentsPattern {
         } else if trimmed.starts_with("// Removed duplicate declaration:") {
             Some(CommentType::DuplicateRemoved)
         } else if trimmed.starts_with("// TODO: Conversion from")
-               || trimmed.starts_with("// TODO: Remove val_to_i64") {
+            || trimmed.starts_with("// TODO: Remove val_to_i64")
+        {
             Some(CommentType::ConversionDetected)
         } else if trimmed.starts_with("// TODO: Type check for") {
             Some(CommentType::TypeCheck)
@@ -55,24 +56,37 @@ impl ConsolidateCommentsPattern {
             return vec![];
         }
 
-        let mut lines = vec![
-            format!("{}// NOTE: This function has been partially decompiled:", indent),
-        ];
+        let mut lines = vec![format!(
+            "{}// NOTE: This function has been partially decompiled:",
+            indent
+        )];
 
         if stats.helper_removed > 0 {
-            lines.push(format!("{}//   - {} helper function call(s) removed", indent, stats.helper_removed));
+            lines.push(format!(
+                "{}//   - {} helper function call(s) removed",
+                indent, stats.helper_removed
+            ));
         }
 
         if stats.duplicate_removed > 0 {
-            lines.push(format!("{}//   - {} duplicate variable declaration(s) removed", indent, stats.duplicate_removed));
+            lines.push(format!(
+                "{}//   - {} duplicate variable declaration(s) removed",
+                indent, stats.duplicate_removed
+            ));
         }
 
         if stats.conversion_detected > 0 {
-            lines.push(format!("{}//   - {} type conversion(s) detected", indent, stats.conversion_detected));
+            lines.push(format!(
+                "{}//   - {} type conversion(s) detected",
+                indent, stats.conversion_detected
+            ));
         }
 
         if stats.type_check > 0 {
-            lines.push(format!("{}//   - {} type check(s) detected", indent, stats.type_check));
+            lines.push(format!(
+                "{}//   - {} type check(s) detected",
+                indent, stats.type_check
+            ));
         }
 
         lines.push(format!("{}//", indent));
@@ -127,7 +141,10 @@ impl Pattern for ConsolidateCommentsPattern {
 
         // Check if consolidation was already done (prevent duplicates in iterative mode)
         for line in &block.body {
-            if line.trim().starts_with("// NOTE: This function has been partially decompiled:") {
+            if line
+                .trim()
+                .starts_with("// NOTE: This function has been partially decompiled:")
+            {
                 return None; // Already consolidated
             }
         }
@@ -217,13 +234,28 @@ mod tests {
         let result = pattern.apply(&block).unwrap();
 
         // Should have consolidated comment + actual code
-        assert!(result.body.iter().any(|l| l.contains("NOTE: This function has been partially decompiled")));
-        assert!(result.body.iter().any(|l| l.contains("1 helper function call")));
-        assert!(result.body.iter().any(|l| l.contains("1 duplicate variable declaration")));
+        assert!(result
+            .body
+            .iter()
+            .any(|l| l.contains("NOTE: This function has been partially decompiled")));
+        assert!(result
+            .body
+            .iter()
+            .any(|l| l.contains("1 helper function call")));
+        assert!(result
+            .body
+            .iter()
+            .any(|l| l.contains("1 duplicate variable declaration")));
         assert!(result.body.iter().any(|l| l.contains("1 type conversion")));
 
         // Should not have individual diagnostic comments
-        assert!(!result.body.iter().any(|l| l.contains("TODO: helper function call removed")));
-        assert!(!result.body.iter().any(|l| l.contains("Removed duplicate declaration")));
+        assert!(!result
+            .body
+            .iter()
+            .any(|l| l.contains("TODO: helper function call removed")));
+        assert!(!result
+            .body
+            .iter()
+            .any(|l| l.contains("Removed duplicate declaration")));
     }
 }

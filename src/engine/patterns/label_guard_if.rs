@@ -105,7 +105,10 @@ fn try_guard_if(label: &str, header: &str, body: &[Node]) -> Option<Node> {
     }
 
     let cond = extract_if_condition(if_block.0)?;
-    let indent = header.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+    let indent = header
+        .chars()
+        .take_while(|c| c.is_whitespace())
+        .collect::<String>();
     let new_header = format!("{indent}if !({cond}) {{");
     let new_footer = format!("{indent}}}");
 

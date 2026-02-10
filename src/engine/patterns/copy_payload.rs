@@ -50,11 +50,17 @@ impl Pattern for CopyPayloadPattern {
             let l6 = body[i + 5].trim_end().to_string();
 
             let caps1 = re_load.captures(&l1).or_else(|| re_load_alt.captures(&l1));
-            let caps2 = re_store.captures(&l2).or_else(|| re_store_alt.captures(&l2));
+            let caps2 = re_store
+                .captures(&l2)
+                .or_else(|| re_store_alt.captures(&l2));
             let caps3 = re_load.captures(&l3).or_else(|| re_load_alt.captures(&l3));
-            let caps4 = re_store.captures(&l4).or_else(|| re_store_alt.captures(&l4));
+            let caps4 = re_store
+                .captures(&l4)
+                .or_else(|| re_store_alt.captures(&l4));
             let caps5 = re_load.captures(&l5).or_else(|| re_load_alt.captures(&l5));
-            let caps6 = re_store.captures(&l6).or_else(|| re_store_alt.captures(&l6));
+            let caps6 = re_store
+                .captures(&l6)
+                .or_else(|| re_store_alt.captures(&l6));
 
             if let (Some(c1), Some(c2), Some(c3), Some(c4), Some(c5), Some(c6)) =
                 (caps1, caps2, caps3, caps4, caps5, caps6)
@@ -112,7 +118,8 @@ impl Pattern for CopyPayloadPattern {
                     .chars()
                     .take_while(|c| c.is_whitespace())
                     .collect::<String>();
-                let replacement = format!("{}copy_payload_3x64({}, {});", indent, src_base, dst_base);
+                let replacement =
+                    format!("{}copy_payload_3x64({}, {});", indent, src_base, dst_base);
                 body.splice(i..i + 6, [replacement]);
                 changed = true;
                 continue;

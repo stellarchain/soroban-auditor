@@ -140,7 +140,13 @@ fn try_reduce_ladder(body: &[Node]) -> Option<Node> {
 
 fn collect_chain_and_match(
     body: &[Node],
-) -> Option<(String, &Node, HashMap<String, Vec<String>>, Vec<String>, Vec<String>)> {
+) -> Option<(
+    String,
+    &Node,
+    HashMap<String, Vec<String>>,
+    Vec<String>,
+    Vec<String>,
+)> {
     let mut current_body: &[Node] = body;
     let mut label_tails: HashMap<String, Vec<String>> = HashMap::new();
     let mut chain_labels: Vec<String> = Vec::new();
@@ -159,7 +165,11 @@ fn collect_chain_and_match(
         }
         label_tails.insert(label, flatten_nodes(&tail));
         match inner {
-            Node::Block { kind: BlockKind::Loop, body, .. } => {
+            Node::Block {
+                kind: BlockKind::Loop,
+                body,
+                ..
+            } => {
                 current_body = body;
                 continue;
             }
@@ -204,7 +214,10 @@ fn split_prefix_and_inner(inner: &[Node]) -> Option<(Vec<Node>, &Node, Vec<Node>
     let mut idx: Option<usize> = None;
     for (i, node) in inner.iter().enumerate() {
         match node {
-            Node::Block { kind: BlockKind::Loop, .. } => {
+            Node::Block {
+                kind: BlockKind::Loop,
+                ..
+            } => {
                 idx = Some(i);
                 break;
             }
@@ -276,14 +289,24 @@ fn parse_match_arms(match_block: &Node) -> Option<Vec<(String, String)>> {
         }
         i += 1;
     }
-    if out.is_empty() { None } else { Some(out) }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
 }
 
 fn parse_match_arm_label(line: &str) -> Option<(String, String)> {
     let (pat, rest) = if let Some(pos) = line.find("=> break '") {
-        (line[..pos].trim().trim_end_matches(',').to_string(), &line[pos + "=> break '".len()..])
+        (
+            line[..pos].trim().trim_end_matches(',').to_string(),
+            &line[pos + "=> break '".len()..],
+        )
     } else if let Some(pos) = line.find("=> continue '") {
-        (line[..pos].trim().trim_end_matches(',').to_string(), &line[pos + "=> continue '".len()..])
+        (
+            line[..pos].trim().trim_end_matches(',').to_string(),
+            &line[pos + "=> continue '".len()..],
+        )
     } else {
         return None;
     };

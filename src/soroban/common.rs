@@ -23,18 +23,32 @@ pub fn env_common_modules_result() -> Result<Vec<Value>, Box<dyn std::error::Err
     })
 }
 
-pub fn take_common_module(modules: &[Value], module_name: &str, field_name: &str) -> Option<ModuleFunction> {
+pub fn take_common_module(
+    modules: &[Value],
+    module_name: &str,
+    field_name: &str,
+) -> Option<ModuleFunction> {
     for module in modules {
         if let Some(module_export) = module.get("export").and_then(Value::as_str) {
             if module_export == module_name {
                 if let Some(functions) = module.get("functions").and_then(Value::as_array) {
                     for function in functions {
                         if let Some(function_obj) = function.as_object() {
-                            if let Some(export_value) = function_obj.get("export").and_then(Value::as_str) {
+                            if let Some(export_value) =
+                                function_obj.get("export").and_then(Value::as_str)
+                            {
                                 if export_value == field_name {
                                     return Some(ModuleFunction {
-                                        module_name: module.get("name").and_then(Value::as_str).unwrap_or_default().to_string(),
-                                        function_name: function_obj.get("name").and_then(Value::as_str).unwrap_or_default().to_string(),
+                                        module_name: module
+                                            .get("name")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or_default()
+                                            .to_string(),
+                                        function_name: function_obj
+                                            .get("name")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or_default()
+                                            .to_string(),
                                         function: function.clone(),
                                     });
                                 }
@@ -49,18 +63,28 @@ pub fn take_common_module(modules: &[Value], module_name: &str, field_name: &str
 }
 
 #[allow(dead_code)]
-pub fn take_common_module_by_name(modules: &[Value], module_name: &str, field_name: &str) -> Option<ModuleFunction> {
-  for module in modules {
+pub fn take_common_module_by_name(
+    modules: &[Value],
+    module_name: &str,
+    field_name: &str,
+) -> Option<ModuleFunction> {
+    for module in modules {
         if let Some(name_value) = module.get("name").and_then(Value::as_str) {
             if name_value == module_name {
                 if let Some(functions) = module.get("functions").and_then(Value::as_array) {
                     for function in functions {
                         if let Some(function_obj) = function.as_object() {
-                            if let Some(export_value) = function_obj.get("name").and_then(Value::as_str) {
+                            if let Some(export_value) =
+                                function_obj.get("name").and_then(Value::as_str)
+                            {
                                 if export_value == field_name {
                                     return Some(ModuleFunction {
                                         module_name: name_value.to_string(),
-                                        function_name: function_obj.get("name").and_then(Value::as_str).unwrap_or_default().to_string(),
+                                        function_name: function_obj
+                                            .get("name")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or_default()
+                                            .to_string(),
                                         function: function.clone(),
                                     });
                                 }

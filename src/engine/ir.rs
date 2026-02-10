@@ -26,14 +26,20 @@ pub fn parse_lines(lines: &[String]) -> Vec<Node> {
     for line in lines {
         let trimmed = line.trim_start();
         if trimmed.starts_with("} else if ") || trimmed.starts_with("} else if(") {
-            let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+            let indent = line
+                .chars()
+                .take_while(|c| c.is_whitespace())
+                .collect::<String>();
             let rest = trimmed.trim_start_matches("} ").trim_start();
             expanded.push(format!("{indent}}}"));
             expanded.push(format!("{indent}{rest}"));
             continue;
         }
         if trimmed.starts_with("} else {") {
-            let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+            let indent = line
+                .chars()
+                .take_while(|c| c.is_whitespace())
+                .collect::<String>();
             expanded.push(format!("{indent}}}"));
             expanded.push(format!("{indent}else {{"));
             continue;

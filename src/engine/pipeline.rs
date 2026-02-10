@@ -1,15 +1,19 @@
-use crate::engine::function::{join_functions, split_functions, FunctionBlock};
+use crate::engine::function::{join_functions, split_functions};
 use crate::engine::pattern::Pattern;
 use crate::engine::patterns::{
-    ContinueBreakCleanup, ForEachValPattern, IrLabelCleanup, LabelLadderInline, LabelLadderReduce,
-    ReadPriceDataPattern, SinglePassLoopCleanup, SimpleLoopUnlabel, LoopToWhile, NextStringWhile,
-    LabelBlockCollapse, LabelGuardIf, LabelBlockTailGuard, LabelIfChain, LabelBlockToLoop,
-    SinglePassUnlabeledLoopCleanup, CopyPayloadPattern, ExitFlagLoopCollapse, LoopUnreachableElse,
-    LoopIfUnreachableToBlock, GuardBlockBreaks, LoopGuardToIf, ExitFlagDefaultAssign, LoopIfBreakElse,
-    LoopBreakTailReturn, UnwrapIfElseBlock, LoopNoControlToBlock, GuardEarlyReturn,
-    StorageAccessPattern, MathOperationsPattern, VariableNamingPattern, StackFramePattern,
-    UndefinedHelpersPattern, MissingSemicolonsPattern, ConversionEliminationPattern,
-    DeduplicateVariablesPattern, ConsolidateCommentsPattern, SmartVariableNamingPattern,
+    ConsolidateCommentsPattern, ContinueBreakCleanup, ConversionEliminationPattern,
+    CopyPayloadPattern, CountedLoopPattern, DeduplicateVariablesPattern, ExitFlagDefaultAssign,
+    ExitFlagLoopCollapse, ForEachValPattern, GuardBlockBreaks, GuardBreakUnreachablePattern, GuardEarlyReturn,
+    FunctionSignaturePattern, InitialAssignmentPattern, IrLabelCleanup, LabelBlockCollapse,
+    LabelBlockTailGuard, LabelBlockToLoop, LabelGuardIf, LabelIfChain, LabelLadderInline,
+    LabelLadderReduce, LinearMemoryVecBuildPattern,
+    LoopBreakTailReturn, LoopGuardToIf, LoopIfBreakElse, LoopIfUnreachableToBlock,
+    LoopNoControlToBlock, LoopToWhile, LoopUnreachableElse, MathOperationsPattern,
+    MissingSemicolonsPattern, NextStringWhile, ReadPriceDataPattern,
+    SimpleLoopUnlabel,
+    SinglePassLoopCleanup, SinglePassUnlabeledLoopCleanup, SmartVariableNamingPattern,
+    StackCopyVecReturnPattern, StackFramePattern, StorageAccessPattern, UndefinedHelpersPattern,
+    UnwrapIfElseBlock,
 };
 
 pub struct Engine {
@@ -18,7 +22,9 @@ pub struct Engine {
 
 impl Engine {
     pub fn new() -> Self {
-        Self { patterns: Vec::new() }
+        Self {
+            patterns: Vec::new(),
+        }
     }
 
     pub fn register<P: Pattern + 'static>(&mut self, pattern: P) {
@@ -42,8 +48,10 @@ impl Engine {
                 iteration += 1;
 
                 if iteration > MAX_ITERATIONS {
-                    eprintln!("Warning: Engine reached max iterations ({}) for function: {}",
-                             MAX_ITERATIONS, block.name);
+                    eprintln!(
+                        "Warning: Engine reached max iterations ({}) for function: {}",
+                        MAX_ITERATIONS, block.name
+                    );
                     break;
                 }
 
@@ -93,24 +101,29 @@ pub fn default_engine() -> Engine {
     engine.register(LabelLadderInline::new());
     engine.register(LabelLadderReduce::new());
     engine.register(ForEachValPattern::new());
+    engine.register(CountedLoopPattern::new());
     engine.register(ReadPriceDataPattern::new());
     engine.register(ContinueBreakCleanup::new());
     engine.register(IrLabelCleanup::new());
 
     // New Soroban-specific patterns
-    engine.register(UndefinedHelpersPattern::new());  // Remove undefined helper calls
-    engine.register(StackFramePattern::new());  // Must run EARLY to clean up stack artifacts
-    engine.register(DeduplicateVariablesPattern::new());  // Remove duplicate variable declarations
-    engine.register(ConversionEliminationPattern::new());  // Detect and annotate val_from_i64/val_to_i64 conversions
-    engine.register(MissingSemicolonsPattern::new());  // Fix missing semicolons
+    engine.register(UndefinedHelpersPattern::new()); // Remove undefined helper calls
+    engine.register(StackFramePattern::new()); // Must run EARLY to clean up stack artifacts
+    engine.register(DeduplicateVariablesPattern::new()); // Remove duplicate variable declarations
+    engine.register(ConversionEliminationPattern::new()); // Detect and annotate val_from_i64/val_to_i64 conversions
+    engine.register(InitialAssignmentPattern::new()); // Combine zero-inits with first assignment
+    engine.register(MissingSemicolonsPattern::new()); // Fix missing semicolons
     engine.register(StorageAccessPattern::new());
     engine.register(MathOperationsPattern::new());
+    engine.register(LinearMemoryVecBuildPattern::new());
     // DISABLED: Old VariableNamingPattern causes panics on some contracts
     // engine.register(VariableNamingPattern::new());
 
-    // DISABLED: Smart variable naming - needs more work on replacement logic
-    // Currently breaks syntax in iterative mode
-    // engine.register(SmartVariableNamingPattern::new());
+    // Smart variable naming (now with single-pass protection)
+    engine.register(SmartVariableNamingPattern::new());
+    engine.register(StackCopyVecReturnPattern::new());
+    engine.register(GuardBreakUnreachablePattern::new());
+    engine.register(FunctionSignaturePattern::new());
 
     // Comment cleanup - MUST RUN LAST to consolidate all diagnostic comments
     engine.register(ConsolidateCommentsPattern::new());

@@ -48,8 +48,12 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
                 footer,
             } => {
                 let mut new_body = rewrite(body, changed);
-                if let Some((cond, trimmed_body, keep_label)) = try_loop_to_while(&label, &new_body) {
-                    let indent = header.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                if let Some((cond, trimmed_body, keep_label)) = try_loop_to_while(&label, &new_body)
+                {
+                    let indent = header
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
                     let header = if keep_label {
                         format!("{indent}'label{}: while {cond} {{", label)
                     } else {
@@ -162,7 +166,14 @@ fn try_loop_to_while(label: &str, body: &[Node]) -> Option<(String, Vec<Node>, b
         return None;
     };
 
-    if has_other_label_control(body, label, first_idx, last_idx, &break_label, &continue_label) {
+    if has_other_label_control(
+        body,
+        label,
+        first_idx,
+        last_idx,
+        &break_label,
+        &continue_label,
+    ) {
         return None;
     }
 

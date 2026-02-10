@@ -161,7 +161,10 @@ fn rewrite_breaks_to_outer(nodes: &mut [Node], labels: &[String], outer: &str) {
             Node::Line(line) => {
                 let t = line.trim();
                 if breaks.iter().any(|b| b == t) {
-                    let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                    let indent = line
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
                     *line = format!("{indent}break '{};", outer);
                 }
             }

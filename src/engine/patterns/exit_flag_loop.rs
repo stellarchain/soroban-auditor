@@ -129,7 +129,10 @@ fn try_collapse_exit_flag_loop(header: &str, body: &[Node]) -> Option<Node> {
         return None;
     }
 
-    let indent = header.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+    let indent = header
+        .chars()
+        .take_while(|c| c.is_whitespace())
+        .collect::<String>();
     let if_block = Node::Block {
         kind: BlockKind::If,
         label: None,
@@ -177,10 +180,7 @@ fn parse_exit_flag_var(line: &str) -> Option<String> {
 
 fn if_header_contains_exit_zero(header: &str, exit_var: &str) -> bool {
     let t = header.trim();
-    t.starts_with("if ")
-        && t.contains(exit_var)
-        && t.contains("== 0")
-        && t.ends_with('{')
+    t.starts_with("if ") && t.contains(exit_var) && t.contains("== 0") && t.ends_with('{')
 }
 
 fn contains_control_in_nodes(nodes: &[Node]) -> bool {
@@ -188,7 +188,11 @@ fn contains_control_in_nodes(nodes: &[Node]) -> bool {
         match node {
             Node::Line(line) => {
                 let t = line.trim();
-                if t == "break;" || t.starts_with("break '") || t == "continue;" || t.starts_with("continue '") {
+                if t == "break;"
+                    || t.starts_with("break '")
+                    || t == "continue;"
+                    || t.starts_with("continue '")
+                {
                     return true;
                 }
             }

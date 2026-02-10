@@ -24,7 +24,9 @@ impl Pattern for ExitFlagDefaultAssign {
         while i < lines.len() {
             let line = lines[i].trim();
             if let Some(label) = parse_exit_label(line) {
-                if let Some((assign_line, if_start, if_end)) = find_exit_flag_if(&lines, i + 1, &label) {
+                if let Some((assign_line, if_start, if_end)) =
+                    find_exit_flag_if(&lines, i + 1, &label)
+                {
                     lines[i] = assign_line.clone();
                     remove_exit_flag_sets(&mut lines, &label);
                     for idx in (if_start..=if_end).rev() {
@@ -112,7 +114,10 @@ fn remove_exit_flag_sets(lines: &mut [String], label: &str) {
     let needle = format!("{label} = 1;");
     for line in lines.iter_mut() {
         if line.contains(&needle) {
-            *line = line.replace(&needle, "").replace("  ;", ";").replace(";  ", ";");
+            *line = line
+                .replace(&needle, "")
+                .replace("  ;", ";")
+                .replace(";  ", ";");
             *line = line.replace(";  break", "; break");
             *line = line.replace("; break", "break");
         }

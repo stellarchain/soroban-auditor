@@ -1,23 +1,22 @@
-use crate::decompile::{collect_imports, extract_data_segments, extract_data_segments_with_offsets, extract_string_literals};
-use crate::patterns::PatternState;
-use crate::patterns::templates::{TemplateMatcher, TemplateLibrary};
-use crate::format::{format_spec_tokens, format_type_ident};
-use parity_wasm::deserialize_file;
-use parity_wasm::elements::{CodeSection, ExportSection, ImportCountType, Instruction, Internal, Section, Type};
-use crate::sdk::{get_backend, ContractSpecs, FunctionContractSpec};
+use crate::decompile::{collect_imports, extract_data_segments_with_offsets};
 use crate::fingerprint::fingerprint_function;
+use crate::format::{format_spec_tokens, format_type_ident};
 use crate::rewrites::suggested_name_for_fingerprint;
+use crate::sdk::{get_backend, ContractSpecs};
+use parity_wasm::deserialize_file;
+use parity_wasm::elements::{
+    ImportCountType, Instruction, Internal, Section, Type,
+};
 use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
- 
 pub mod utils;
- 
-mod specs;
+
 mod raw;
+mod specs;
 
 #[derive(StructOpt)]
 pub struct Opt {
@@ -27,6 +26,11 @@ pub struct Opt {
         help = "Use the names in the name section for the internal function names"
     )]
     use_name_section: bool,
+    #[structopt(
+        long = "sdk-report",
+        help = "Print detailed SDK usage report to stderr"
+    )]
+    sdk_report: bool,
     #[structopt(help = "Input file", parse(from_os_str))]
     input: PathBuf,
     #[structopt(
@@ -48,21 +52,21 @@ fn postprocess_memory_macros(mut out: String, contract_name: &str) -> String {
     out = out.replace("self.memory.size()", "msize!()");
     out = out.replace("self.memory.grow(", "mgrow!(");
 
-    out = strip_impl_memory_macros(out);
-    let macros = "macro_rules! mload8 {\n    ($addr:expr) => {{\n        let Self { memory, .. } = self;\n        memory.load8($addr)\n    }};\n}\nmacro_rules! mload16 {\n    ($addr:expr) => {{\n        let Self { memory, .. } = self;\n        memory.load16($addr)\n    }};\n}\nmacro_rules! mload32 {\n    ($addr:expr) => {{\n        let Self { memory, .. } = self;\n        memory.load32($addr)\n    }};\n}\nmacro_rules! mload64 {\n    ($addr:expr) => {{\n        let Self { memory, .. } = self;\n        memory.load64($addr)\n    }};\n}\nmacro_rules! mstore8 {\n    ($addr:expr, $value:expr) => {{\n        let Self { memory, .. } = self;\n        memory.store8($addr, $value)\n    }};\n}\nmacro_rules! mstore16 {\n    ($addr:expr, $value:expr) => {{\n        let Self { memory, .. } = self;\n        memory.store16($addr, $value)\n    }};\n}\nmacro_rules! mstore32 {\n    ($addr:expr, $value:expr) => {{\n        let Self { memory, .. } = self;\n        memory.store32($addr, $value)\n    }};\n}\nmacro_rules! mstore64 {\n    ($addr:expr, $value:expr) => {{\n        let Self { memory, .. } = self;\n        memory.store64($addr, $value)\n    }};\n}\nmacro_rules! msize {\n    () => {{\n        let Self { memory, .. } = self;\n        memory.size()\n    }};\n}\nmacro_rules! mgrow {\n    ($pages:expr) => {{\n        let Self { memory, .. } = self;\n        memory.grow($pages)\n    }};\n}\n";
-    if !out.contains("macro_rules! mload8") {
+    let include_macro = "include!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/memory_macros.rs\"));";
+    if !out.contains(include_macro) {
         if let Some(pos) = out.find("\n#[contractimpl]") {
-            out.insert_str(pos, &format!("\n{}\n", macros));
+            out.insert_str(pos, &format!("\n{}\n\n", include_macro));
         } else {
             let impl_line = format!("\nimpl {} {{\n", contract_name);
             if let Some(pos) = out.find(&impl_line) {
-                out.insert_str(pos, &format!("\n{}\n", macros));
+                out.insert_str(pos, &format!("\n{}\n\n", include_macro));
             }
         }
     }
 
     let out = crate::engine::default_engine().apply(out);
     let out = fix_guard_breaks(out);
+    let out = format_function_signatures(out);
     let out = normalize_indentation(out);
     fix_trailing_braces(out)
 }
@@ -144,6 +148,7 @@ fn normalize_indentation(output: String) -> String {
     let lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
     let mut out: Vec<String> = Vec::with_capacity(lines.len());
     let mut depth: i32 = 0;
+    let mut in_signature = false;
 
     for line in lines {
         let trimmed = line.trim();
@@ -157,7 +162,15 @@ fn normalize_indentation(output: String) -> String {
             effective_depth = (depth - 1).max(0);
         }
 
-        let indent = " ".repeat((effective_depth as usize) * 4);
+        if !in_signature && trimmed.starts_with("pub fn") && trimmed.ends_with('(') {
+            in_signature = true;
+        }
+
+        let mut indent_width = (effective_depth as usize) * 4;
+        if in_signature && !trimmed.starts_with("pub fn") && !trimmed.starts_with(')') {
+            indent_width += 4;
+        }
+        let indent = " ".repeat(indent_width);
         out.push(format!("{indent}{trimmed}"));
 
         let opens = trimmed.chars().filter(|&c| c == '{').count() as i32;
@@ -166,8 +179,113 @@ fn normalize_indentation(output: String) -> String {
         if depth < 0 {
             depth = 0;
         }
+
+        if in_signature {
+            let is_signature_end =
+                trimmed.starts_with(')') || trimmed.contains(")->") || trimmed.contains(") ->");
+            if is_signature_end {
+                in_signature = false;
+            }
+        }
     }
     out.join("\n")
+}
+
+fn format_function_signatures(code: String) -> String {
+    let mut out = String::new();
+    let mut buffer = String::new();
+    let mut in_signature = false;
+    let mut paren_depth: i32 = 0;
+
+    for line in code.lines() {
+        let trimmed = line.trim_start();
+        if !in_signature && trimmed.starts_with("pub fn") && trimmed.contains('(') {
+            in_signature = true;
+            paren_depth = trimmed.chars().filter(|&c| c == '(').count() as i32
+                - trimmed.chars().filter(|&c| c == ')').count() as i32;
+            buffer = format!("{}\n", line);
+            continue;
+        }
+
+        if in_signature {
+            buffer.push_str(&format!("{}\n", line));
+            paren_depth += line.chars().filter(|&c| c == '(').count() as i32;
+            paren_depth -= line.chars().filter(|&c| c == ')').count() as i32;
+            if paren_depth <= 0 {
+                out.push_str(&reflow_signature(&buffer));
+                buffer.clear();
+                in_signature = false;
+            }
+            continue;
+        }
+
+        out.push_str(line);
+        out.push('\n');
+    }
+
+    if !buffer.is_empty() {
+        out.push_str(&reflow_signature(&buffer));
+    }
+
+    out
+}
+
+fn reflow_signature(block: &str) -> String {
+    let mut result = String::new();
+    for line in block.lines() {
+        let leading = line
+            .chars()
+            .take_while(|c| c.is_whitespace())
+            .collect::<String>();
+        let mut trimmed = line.trim_start().to_string();
+        if trimmed.starts_with(")->") {
+            trimmed = trimmed.replacen(")->", ") ->", 1);
+        }
+        if trimmed.starts_with("){") {
+            trimmed = trimmed.replacen("){", ") {", 1);
+        }
+        trimmed = cleanup_signature_trailing_commas(trimmed);
+        if trimmed.starts_with("pub fn") {
+            result.push_str(&leading);
+            result.push_str(&trimmed);
+            result.push('\n');
+            continue;
+        }
+        if trimmed.is_empty() {
+            result.push('\n');
+            continue;
+        }
+        if trimmed.ends_with(',') {
+            result.push_str("            ");
+            result.push_str(&trimmed);
+            result.push('\n');
+        } else if trimmed.ends_with(')') {
+            result.push_str("            ");
+            result.push_str(&trimmed);
+            result.push('\n');
+        } else {
+            result.push_str("            ");
+            result.push_str(&trimmed);
+            result.push('\n');
+        }
+    }
+    result
+}
+
+fn cleanup_signature_trailing_commas(mut line: String) -> String {
+    while line.contains(",),") {
+        line = line.replace(",),", "),");
+    }
+    while line.contains(",) ->") {
+        line = line.replace(",) ->", ") ->");
+    }
+    while line.contains(",) {") {
+        line = line.replace(",) {", ") {");
+    }
+    while line.contains(",)") {
+        line = line.replace(",)", ")");
+    }
+    line
 }
 
 fn fix_trailing_braces(output: String) -> String {
@@ -190,7 +308,6 @@ fn fix_trailing_braces(output: String) -> String {
     }
     out
 }
-
 
 fn collect_self_calls(output: &str) -> std::collections::HashSet<String> {
     let mut calls: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -269,15 +386,17 @@ fn postprocess_remove_unused_methods(output: String, contract_name: &str) -> Str
                 in_impl = true;
                 impl_brace_depth = 1;
                 let mut j = i;
+                let mut prev_marker = String::new();
                 while j > 0 {
                     j -= 1;
                     let prev = lines[j].trim();
                     if prev.is_empty() {
                         continue;
                     }
-                    eligible_impl = prev == "#[allow(dead_code)]";
+                    prev_marker = prev.to_string();
                     break;
                 }
+                eligible_impl = prev_marker != "#[contractimpl]";
                 out_lines.push(line.to_string());
                 i += 1;
                 continue;
@@ -332,10 +451,47 @@ fn postprocess_remove_unused_methods(output: String, contract_name: &str) -> Str
             }
         }
 
-    out_lines.push(line.to_string());
-    i += 1;
-}
+        out_lines.push(line.to_string());
+        i += 1;
+    }
     out_lines.join("\n")
+}
+
+fn remove_top_level_helper(output: &str, helper_name: &str) -> String {
+    let call_count = output.matches(&format!("{}(", helper_name)).count();
+    if call_count > 1 {
+        return output.to_string();
+    }
+
+    let lines: Vec<&str> = output.lines().collect();
+    let mut out_lines: Vec<String> = Vec::with_capacity(lines.len());
+    let mut i = 0usize;
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        if trimmed.starts_with(&format!("fn {}(", helper_name)) {
+            let mut depth: i32 = line.chars().filter(|&c| c == '{').count() as i32
+                - line.chars().filter(|&c| c == '}').count() as i32;
+            i += 1;
+            while i < lines.len() && depth > 0 {
+                depth += lines[i].chars().filter(|&c| c == '{').count() as i32;
+                depth -= lines[i].chars().filter(|&c| c == '}').count() as i32;
+                i += 1;
+            }
+            continue;
+        }
+        out_lines.push(line.to_string());
+        i += 1;
+    }
+    out_lines.join("\n")
+}
+
+fn postprocess_remove_unused_top_level_helpers(output: String) -> String {
+    let mut out = output;
+    for helper in ["address_from_i64", "err_contract"] {
+        out = remove_top_level_helper(&out, helper);
+    }
+    out
 }
 
 /// Apply engine patterns to clean up generated code
@@ -344,508 +500,7 @@ fn postprocess_apply_patterns(output: String) -> String {
     // TODO: Re-enable when function parsing logic is fixed
     // The current implementation has issues with brace matching
     // causing parts of the file to be skipped
-    eprintln!("Note: Pattern postprocessing is temporarily disabled");
     output
-}
-
-fn parse_len_line(line: &str) -> Option<String> {
-    // expects: let <var> = Vec::<Val>::from_val(env, &val_from_i64(<x>)).len() as i64;
-    let trimmed = line.trim();
-    if !trimmed.starts_with("let ") || !trimmed.contains("Vec::<Val>::from_val(env, &val_from_i64(") {
-        return None;
-    }
-    let mut parts = trimmed.splitn(3, ' ');
-    parts.next()?;
-    let var = parts.next()?.trim().to_string();
-    if !(trimmed.ends_with(".len() as i64;") || trimmed.ends_with(".len() as i64")) {
-        return None;
-    }
-    Some(var)
-}
-
-fn parse_len_cmp_line(line: &str) -> Option<(String, String)> {
-    // expects: if ((a ^ b) as u64 >= 4294967296 as u64) as i32 != 0 {
-    let trimmed = line.trim();
-    if !trimmed.starts_with("if ((") || !trimmed.contains(") as u64 >= 4294967296 as u64) as i32 != 0 {") {
-        return None;
-    }
-    let inner = trimmed.strip_prefix("if ((")?.strip_suffix(") as u64 >= 4294967296 as u64) as i32 != 0 {")?;
-    let mut parts = inner.split('^').map(|s| s.trim());
-    let a = parts.next()?.to_string();
-    let b = parts.next()?.to_string();
-    Some((a, b))
-}
-
-fn parse_err_contract_line(line: &str) -> Option<String> {
-    // expects: let <var> = err_contract(10);
-    let trimmed = line.trim();
-    if !trimmed.starts_with("let ") || !trimmed.ends_with(" = err_contract(10);") {
-        return None;
-    }
-    let mut parts = trimmed.splitn(3, ' ');
-    parts.next()?;
-    let var = parts.next()?.trim().to_string();
-    Some(var)
-}
-
-fn parse_assign_var_line(line: &str, rhs: &str) -> Option<String> {
-    // expects: <var> = <rhs>;
-    let trimmed = line.trim();
-    if !trimmed.ends_with(';') {
-        return None;
-    }
-    let mut parts = trimmed[..trimmed.len() - 1].splitn(2, '=').map(|s| s.trim());
-    let left = parts.next()?;
-    let right = parts.next()?;
-    if right != rhs {
-        return None;
-    }
-    Some(left.to_string())
-}
-
-fn parse_break_label_line(line: &str) -> Option<String> {
-    // expects: break 'labelX;
-    let trimmed = line.trim();
-    if !trimmed.starts_with("break '") || !trimmed.ends_with(";") {
-        return None;
-    }
-    let inner = trimmed.strip_prefix("break '")?.strip_suffix(";")?;
-    Some(inner.to_string())
-}
-
-
-fn parse_vec_new_line(line: &str) -> Option<(String, String)> {
-    // expects: let <var> = val_to_i64(Vec::<Val>::new(env).into_val(env))
-    let trimmed = line.trim();
-    if !trimmed.starts_with("let ") || !trimmed.contains("= val_to_i64(Vec::<Val>::new(env).into_val(env))") {
-        return None;
-    }
-    let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
-    let mut parts = trimmed.splitn(3, ' ');
-    parts.next()?;
-    let var = parts.next()?.trim().to_string();
-    Some((indent, var))
-}
-
-
-fn parse_vec_push_line(line: &str) -> Option<(String, String, String, String)> {
-    // expects: let <var> = { let mut v = Vec::<Val>::from_val(env, &val_from_i64(<vec>)); v.push_back(val_from_i64(<val>)); val_to_i64(v.into_val(env)) }
-    let trimmed = line.trim();
-    if !trimmed.starts_with("let ") || !trimmed.contains("Vec::<Val>::from_val(env, &val_from_i64(") {
-        return None;
-    }
-    if !trimmed.contains("v.push_back(val_from_i64(") || !trimmed.contains("val_to_i64(v.into_val(env))") {
-        return None;
-    }
-    let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
-    let mut parts = trimmed.splitn(3, ' ');
-    parts.next()?;
-    let target = parts.next()?.trim().to_string();
-    let vec_start = trimmed.find("Vec::<Val>::from_val(env, &val_from_i64(")? + "Vec::<Val>::from_val(env, &val_from_i64(".len();
-    let vec_end = trimmed[vec_start..].find("))")? + vec_start;
-    let vec_var = trimmed[vec_start..vec_end].trim().to_string();
-    let val_start = trimmed.find("v.push_back(val_from_i64(")? + "v.push_back(val_from_i64(".len();
-    let val_end = trimmed[val_start..].find("))")? + val_start;
-    let val_var = trimmed[val_start..val_end].trim().to_string();
-    Some((indent, target, vec_var, val_var))
-}
-
-
-struct VecStringIterInfo {
-    indent: String,
-    vec_var: String,
-    body_line: String,
-    end_index: usize,
-}
-
-fn parse_vec_string_iter_block(lines: &[&str], start: usize) -> Option<VecStringIterInfo> {
-    let line = lines.get(start)?;
-    let trimmed = line.trim();
-    if trimmed != "'label0: loop {" {
-        return None;
-    }
-    let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
-    let l1 = lines.get(start + 1)?.trim();
-    if l1 != "'label1: loop {" {
-        return None;
-    }
-    let l2 = lines.get(start + 2)?.trim();
-    if !l2.contains("self.vec_next_string_flag(env,") {
-        return None;
-    }
-    let vec_var = extract_vec_var_from_next_string(l2)?;
-    // scan for guard+break and body line we can inline
-    let mut idx = start + 3;
-    let mut body_line: Option<String> = None;
-    let mut end_index = None;
-    while idx + 1 < lines.len() {
-        let cur = lines[idx].trim();
-        if cur.starts_with("if (slot_") && cur.contains("== 0") && lines[idx + 1].trim() == "break 'label0;" {
-            idx += 2;
-            continue;
-        }
-        if cur.starts_with("break;") || cur.starts_with("break 'label1") {
-            idx += 1;
-            continue;
-        }
-        if cur.starts_with("var") && cur.contains("= Error(Storage, MissingValue)") {
-            // outer error handled by caller
-            idx += 1;
-            continue;
-        }
-        if cur.starts_with("let ") && cur.contains("self.vec_push_val(env") {
-            body_line = Some(cur.to_string());
-        }
-        if cur == "}" && lines.get(idx + 1).map(|s| s.trim()) == Some("}") {
-            end_index = Some(idx + 1);
-            break;
-        }
-        idx += 1;
-    }
-    let body_line = body_line?;
-    let end_index = end_index?;
-    Some(VecStringIterInfo {
-        indent,
-        vec_var,
-        body_line,
-        end_index,
-    })
-}
-
-fn extract_vec_var_from_next_string(line: &str) -> Option<String> {
-    // expects: self.vec_next_string_flag(env, <tmp>, <vec_ptr>);
-    let inner = line.strip_prefix("self.vec_next_string_flag(env,")?.strip_suffix(");")?;
-    let mut parts = inner.split(',').map(|s| s.trim());
-    parts.next()?;
-    parts.next()?;
-    let vec = parts.next()?.to_string();
-    Some(vec)
-}
-
-
-fn parse_vec_new_assign(line: &str) -> Option<(String, String)> {
-    let trimmed = line.trim();
-    if !trimmed.starts_with("let ") || !trimmed.contains("= self.vec_new_val(env);") {
-        return None;
-    }
-    let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
-    let mut parts = trimmed.splitn(3, ' ');
-    parts.next()?;
-    let var = parts.next()?.trim().to_string();
-    Some((indent, var))
-}
-
-fn parse_vec_push_assign(line: &str) -> Option<(String, String)> {
-    let trimmed = line.trim();
-    if !trimmed.starts_with("let ") || !trimmed.contains("= self.vec_push_val(env,") {
-        return None;
-    }
-    let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
-    let mut parts = trimmed.splitn(3, ' ');
-    parts.next()?;
-    let var = parts.next()?.trim().to_string();
-    Some((indent, var))
-}
-
-fn parse_vec_push_args(line: &str) -> Option<(String, String)> {
-    let trimmed = line.trim();
-    let start = trimmed.find("self.vec_push_val(env,")? + "self.vec_push_val(env,".len();
-    let inner = trimmed[start..].trim();
-    let end = inner.find(");")?;
-    let args = inner[..end].split(',').map(|s| s.trim()).collect::<Vec<_>>();
-    if args.len() != 2 {
-        return None;
-    }
-    Some((args[0].to_string(), args[1].to_string()))
-}
-
-fn parse_simple_assign(line: &str, rhs: &str) -> Option<String> {
-    let trimmed = line.trim();
-    if !trimmed.ends_with(';') {
-        return None;
-    }
-    let mut parts = trimmed[..trimmed.len() - 1].splitn(2, '=').map(|s| s.trim());
-    let left = parts.next()?;
-    let right = parts.next()?;
-    if right != rhs {
-        return None;
-    }
-    Some(left.to_string())
-}
-
-fn parse_dead_slot_pair(line1: &str, line2: &str) -> Option<String> {
-    // line1: let mut slot_varX_0_i64 = mload64!(<src> as usize) as i64;
-    // line2: let mut slot_varY_0_i64 = slot_varX_0_i64 as i64;
-    let t1 = line1.trim();
-    let t2 = line2.trim();
-    if !t1.starts_with("let mut slot_") || !t1.contains("= mload64!(") {
-        return None;
-    }
-    if !t2.starts_with("let mut slot_") || !t2.contains("= ") || !t2.contains(" as i64;") {
-        return None;
-    }
-    let src = parse_base_from_mload64(t1)?;
-    Some(src)
-}
-
-fn parse_mload64_line(line: &str, src: &str) -> Option<String> {
-    // line: let var = mload64!(<src>.wrapping_add(8) as usize) as i64;
-    let t = line.trim();
-    if !t.starts_with("let ") || !t.contains("= mload64!(") {
-        return None;
-    }
-    if !t.contains(src) {
-        return None;
-    }
-    let mut parts = t.splitn(3, ' ');
-    parts.next()?;
-    let var = parts.next()?.trim().to_string();
-    Some(var)
-}
-
-fn is_mstore64_line(line: &str, var: &str) -> bool {
-    // line: mstore64!(... , <var> as u64);
-    let t = line.trim();
-    t.starts_with("mstore64!(") && t.contains(&format!("{var} as u64"))
-}
-
-fn parse_slot_from_feed_id(line: &str) -> Option<String> {
-    let t = line.trim();
-    if !t.starts_with("let mut ") || !t.ends_with(" = feed_id as i64;") {
-        return None;
-    }
-    let mut parts = t.splitn(3, ' ');
-    parts.next()?;
-    let var = parts.next()?.trim().to_string();
-    Some(var)
-}
-
-
-struct VecNextStringBlock {
-    indent: String,
-    base: String,
-    tmp: String,
-    iter_ptr: String,
-    break_label: String,
-    end_index: usize,
-}
-
-fn parse_vec_next_string_block(lines: &[&str], start: usize) -> Option<VecNextStringBlock> {
-    let line0 = lines.get(start)?.trim();
-    if !line0.starts_with("self.vec_next_string_flag(env,") {
-        return None;
-    }
-    let indent = lines[start].chars().take_while(|c| c.is_whitespace()).collect::<String>();
-    let (tmp, iter_ptr) = parse_vec_next_string_args(line0)?;
-    let line1 = lines.get(start + 1)?.trim();
-    let line2 = lines.get(start + 2)?.trim();
-    let line3 = lines.get(start + 3)?.trim();
-    let line4 = lines.get(start + 4)?.trim();
-    let line5 = lines.get(start + 5)?.trim();
-    let base = parse_base_from_mload64(line1)?;
-    if parse_base_from_mload64(line2)? != base {
-        return None;
-    }
-    if !line3.starts_with("self.guard_nonzero_ptr(env,") || !line3.contains(&base) {
-        return None;
-    }
-    if parse_base_from_mload32(line4)? != base {
-        return None;
-    }
-    if !line5.starts_with("if (") || !line5.ends_with("{") {
-        return None;
-    }
-    let break_line = lines.get(start + 6)?.trim();
-    let label = parse_break_label_line(break_line)?;
-    let close_line = lines.get(start + 7)?.trim();
-    if close_line != "}" {
-        return None;
-    }
-    Some(VecNextStringBlock {
-        indent,
-        base,
-        tmp,
-        iter_ptr,
-        break_label: label,
-        end_index: start + 7,
-    })
-}
-
-fn parse_vec_next_string_args(line: &str) -> Option<(String, String)> {
-    let inner = line.strip_prefix("self.vec_next_string_flag(env,")?.strip_suffix(");")?;
-    let mut parts = inner.split(',').map(|s| s.trim());
-    let tmp = parts.next()?.to_string();
-    let iter_ptr = parts.next()?.to_string();
-    Some((tmp, iter_ptr))
-}
-
-fn parse_base_from_mload64(line: &str) -> Option<String> {
-    // expects: let mut slot_* = mload64!(<base> as usize + 64) as i64;
-    let trimmed = line.trim();
-    let idx = trimmed.find("mload64!(")?;
-    let inner = &trimmed[idx + "mload64!(".len()..];
-    if let Some(end) = inner.find("as usize +") {
-        return Some(inner[..end].trim().to_string());
-    }
-    if let Some(end) = inner.find("as usize)") {
-        return Some(inner[..end].trim().to_string());
-    }
-    None
-}
-
-fn parse_base_from_mload32(line: &str) -> Option<String> {
-    // expects: let mut slot_* = mload32!(<base> as usize + 24) as i32;
-    let trimmed = line.trim();
-    let idx = trimmed.find("mload32!(")?;
-    let inner = &trimmed[idx + "mload32!(".len()..];
-    let end = inner.find("as usize +")?;
-    Some(inner[..end].trim().to_string())
-}
-
-fn parse_break_label_from_if(line: &str) -> Option<String> {
-    let _ = line;
-    None
-}
-
-fn parse_frame_decl_line(line: &str) -> Option<(String, String)> {
-    // expects: let frame = self.global0.wrapping_sub(96);
-    let trimmed = line.trim();
-    if !trimmed.starts_with("let ") || !trimmed.ends_with(" = self.global0.wrapping_sub(96);") {
-        return None;
-    }
-    let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
-    let mut parts = trimmed.splitn(3, ' ');
-    parts.next()?;
-    let var = parts.next()?.trim().to_string();
-    Some((var, indent))
-}
-
-fn is_global0_assign(line: &str, var: &str) -> bool {
-    line.trim() == format!("self.global0 = {};", var)
-}
-
-fn is_global0_restore(line: &str, var: &str) -> bool {
-    line.trim() == format!("self.global0 = {}.wrapping_add(96);", var)
-}
-
-fn is_pack_ok_val_line(line: &str) -> bool {
-    let trimmed = line.trim();
-    trimmed.starts_with("let _ = self.pack_ok_val(") && trimmed.ends_with(");")
-}
-
-fn parse_write_ok_val_line(line: &str) -> Option<(String, String, String)> {
-    let trimmed = line.trim();
-    if !trimmed.starts_with("self.write_ok_val(") || !trimmed.ends_with(");") {
-        return None;
-    }
-    let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
-    let inner = trimmed.strip_prefix("self.write_ok_val(")?.strip_suffix(");")?;
-    let mut parts = inner.split(',').map(|s| s.trim());
-    let _env = parts.next()?;
-    let tmp = parts.next()?.to_string();
-    let val_expr = parts.next()?.to_string();
-    Some((tmp, val_expr, indent))
-}
-
-fn is_slot_load32_line(line: &str, tmp: &str) -> bool {
-    let trimmed = line.trim();
-    trimmed.starts_with("let mut slot_") && trimmed.contains(&format!("mload32!({} as usize)", tmp))
-}
-
-fn is_slot_load64_line(line: &str, tmp: &str) -> bool {
-    let trimmed = line.trim();
-    trimmed.starts_with("let mut slot_") && trimmed.contains(&format!("mload64!({} as usize + 8)", tmp))
-}
-
-fn is_zero_flag_if_line(if_line: &str, slot_line: &str) -> bool {
-    let slot_name = slot_line
-        .trim()
-        .split_whitespace()
-        .nth(2)
-        .unwrap_or("");
-    let trimmed = if_line.trim();
-    trimmed == format!("if {} != 0 {{", slot_name)
-}
-
-fn is_direct_flag_if_line(if_line: &str, tmp: &str) -> bool {
-    let trimmed = if_line.trim();
-    trimmed == format!("if (mload32!({} as usize) != 0) as i32 != 0 {{", tmp)
-}
-
-fn is_break_line(line: &str) -> bool {
-    let trimmed = line.trim();
-    trimmed.starts_with("break '") && trimmed.ends_with(";")
-}
-
-fn parse_assign_from_slot_line(line: &str, slot_line: &str) -> Option<String> {
-    let slot_name = slot_line
-        .trim()
-        .split_whitespace()
-        .nth(2)
-        .unwrap_or("");
-    let trimmed = line.trim();
-    if !trimmed.ends_with(';') {
-        return None;
-    }
-    let mut parts = trimmed[..trimmed.len() - 1].splitn(2, '=').map(|s| s.trim());
-    let left = parts.next()?;
-    let right = parts.next()?;
-    if right != slot_name {
-        return None;
-    }
-    Some(left.to_string())
-}
-
-fn collect_needed_function_indices(
-    module: &parity_wasm::elements::Module,
-    code: &CodeSection,
-    import_count: usize,
-    exports: &ExportSection,
-) -> HashSet<u32> {
-    let mut needed: HashSet<u32> = HashSet::new();
-    let mut stack: Vec<u32> = Vec::new();
-
-    for export in exports.entries() {
-        if let &Internal::Function(func_index) = export.internal() {
-            stack.push(func_index);
-        }
-    }
-
-    let mut table_elems: Vec<u32> = Vec::new();
-    if let Some(elem_section) = module.elements_section() {
-        for segment in elem_section.entries() {
-            table_elems.extend(segment.members().iter().copied());
-        }
-    }
-    let mut table_added = false;
-
-    while let Some(func_index) = stack.pop() {
-        if needed.contains(&func_index) {
-            continue;
-        }
-        needed.insert(func_index);
-        if (func_index as usize) < import_count {
-            continue;
-        }
-        let body_index = func_index as usize - import_count;
-        if let Some(body) = code.bodies().get(body_index) {
-            for instr in body.code().elements() {
-                match instr {
-                    Instruction::Call(n) => {
-                        stack.push(*n);
-                    }
-                    Instruction::CallIndirect(_, _) => {
-                        if !table_added && !table_elems.is_empty() {
-                            stack.extend(table_elems.iter().copied());
-                            table_added = true;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-    needed
 }
 
 pub fn run(opt: Opt) -> Result<(), String> {
@@ -857,9 +512,7 @@ pub fn run(opt: Opt) -> Result<(), String> {
         .map_err(|err| format!("Error: {}", err))?;
     let module = deserialize_file(&input).map_err(|err| format!("{}", err))?;
     let module = module.parse_names().unwrap_or_else(|(_, m)| m);
-    let data_segments = extract_data_segments(&module);
     let data_segments_with_offsets = extract_data_segments_with_offsets(&module);
-    let string_literals = extract_string_literals(&module);
 
     let mut writer: Vec<u8> = Vec::new();
     let contract_name = utils::contract_name_from_module_or_path(&module, &input);
@@ -867,24 +520,13 @@ pub fn run(opt: Opt) -> Result<(), String> {
         Ok(specs) => specs,
         Err(_err) => ContractSpecs::default(),
     };
-    let type_flags = utils::spec_type_flags(&contract_specs);
-    let has_datakey_type = type_flags.has_datakey_type;
-    let has_allowance_value_type = type_flags.has_allowance_value_type;
-    let has_allowance_key_type = type_flags.has_allowance_key_type;
-    let has_token_metadata_type = type_flags.has_token_metadata_type;
-    let has_signer_variant = type_flags.has_signer_variant;
-    let has_signer_cnt_variant = type_flags.has_signer_cnt_variant;
-    let has_admin_variant = type_flags.has_admin_variant;
-    let has_spend_limit_variant = type_flags.has_spend_limit_variant;
-    let has_counter_variant = type_flags.has_counter_variant;
-    let has_owner_variant = type_flags.has_owner_variant;
-    let data_key_variants = utils::parse_datakey_variants(&contract_specs);
-    let struct_defs = utils::parse_struct_defs(&contract_specs);
     let is_account_contract = utils::is_account_contract(&contract_specs);
 
     let import_count = module.import_count(ImportCountType::Function);
     let code = module.code_section().ok_or("Missing code section")?;
-    let fns = module.function_section().ok_or("Missing function section")?;
+    let fns = module
+        .function_section()
+        .ok_or("Missing function section")?;
     let types = module.type_section().ok_or("Missing type section")?;
     let exports = module.export_section().ok_or("Missing export section")?;
 
@@ -945,19 +587,16 @@ pub fn run(opt: Opt) -> Result<(), String> {
         }
     }
 
-    let mut import_items =
-        collect_imports(&contract_specs, &exports, &code, &functions, import_count, is_account_contract);
+    let mut import_items = collect_imports(
+        &contract_specs,
+        &exports,
+        &code,
+        &functions,
+        import_count,
+        is_account_contract,
+    );
     for extra in [
-        "Val",
-        "Address",
-        "FromVal",
-        "IntoVal",
-        "Vec",
-        "Map",
-        "Bytes",
-        "BytesN",
-        "String",
-        "Symbol",
+        "Val", "Address", "FromVal", "IntoVal", "Vec", "Map", "Bytes", "BytesN", "String", "Symbol",
     ] {
         if !import_items.iter().any(|item| item == extra) {
             import_items.push(extra.to_string());
@@ -969,9 +608,7 @@ pub fn run(opt: Opt) -> Result<(), String> {
     writeln!(
         writer,
         "#![no_std]\n{}\n\n#[contract]\n{}struct {};",
-        import_line,
-        contract_struct_vis,
-        contract_name
+        import_line, contract_struct_vis, contract_name
     )
     .map_err(|e| e.to_string())?;
     writeln!(writer).map_err(|e| e.to_string())?;
@@ -997,8 +634,7 @@ pub fn run(opt: Opt) -> Result<(), String> {
         "fn address_from_i64(env: &Env, v: i64) -> Address {{"
     )
     .map_err(|e| e.to_string())?;
-    writeln!(writer, "    Address::from_val(env, &val_from_i64(v))")
-        .map_err(|e| e.to_string())?;
+    writeln!(writer, "    Address::from_val(env, &val_from_i64(v))").map_err(|e| e.to_string())?;
     writeln!(writer, "}}").map_err(|e| e.to_string())?;
 
     if is_account_contract {
@@ -1042,11 +678,8 @@ pub fn run(opt: Opt) -> Result<(), String> {
             "const APPROVE_FN: Symbol = symbol_short!(\"approve\");"
         )
         .map_err(|e| e.to_string())?;
-        writeln!(
-            writer,
-            "const BURN_FN: Symbol = symbol_short!(\"burn\");"
-        )
-        .map_err(|e| e.to_string())?;
+        writeln!(writer, "const BURN_FN: Symbol = symbol_short!(\"burn\");")
+            .map_err(|e| e.to_string())?;
     } else if !contract_specs.types().is_empty() {
         writeln!(writer).map_err(|e| e.to_string())?;
         for ty in contract_specs.types() {
@@ -1056,89 +689,57 @@ pub fn run(opt: Opt) -> Result<(), String> {
     }
 
     let mut indirect_fns = BTreeMap::new();
-    let mut pattern_state = PatternState::default();
     let spec_by_fn_index = utils::build_spec_index(&contract_specs, exports);
-    let internal_call_forwarders =
-        utils::build_internal_call_forwarders(&code, fns, import_count, &functions);
+
+    // Use both forwarder detectors:
+    // 1. Old system for simple forwarders (compatible with existing code)
+    let call_forwarders = utils::build_call_forwarders(&code, fns, import_count, &functions);
+
+    // 2. New ForwarderAnalyzer for complex patterns
+    use crate::engine::forwarder_analyzer::ForwarderAnalyzer;
+    let forwarder_analyzer = ForwarderAnalyzer::new(import_count);
+    let complex_forwarders =
+        forwarder_analyzer.analyze_all_functions(&code, import_count, &functions);
+
+    // Log detected forwarders for debugging
+    if std::env::var("SOROBAN_AUDITOR_DEBUG").is_ok() {
+        eprintln!("Detected {} simple forwarders", call_forwarders.len());
+        for (fn_idx, fwd) in &call_forwarders {
+            eprintln!(
+                "  Simple: func{} -> {}",
+                fn_idx - import_count as u32,
+                fwd.target
+            );
+        }
+        eprintln!("Detected {} complex forwarders", complex_forwarders.len());
+        for (fn_idx, info) in &complex_forwarders {
+            eprintln!(
+                "  Complex: func{} (complexity={}, type={:?}, target={})",
+                fn_idx - import_count as u32,
+                info.complexity_score,
+                info.forwarder_type,
+                info.target_function
+            );
+        }
+    }
 
     let _has_dynamic_element_section_offset = false;
 
     let (globals, imported_globals_count) =
         utils::build_globals(module.import_section(), &module, exports);
 
- 
-
     let impl_block = r#"
 #[contractimpl]
 impl {contract_name} {"#
         .replace("{contract_name}", &contract_name);
     writeln!(writer, "{}", impl_block).map_err(|e| e.to_string())?;
+    let emit_raw_helpers = std::env::var("SOROBAN_AUDITOR_EMIT_RAW_FUNCTIONS").is_ok();
 
-    // Create template matcher for pattern-based code generation
-    let template_matcher = TemplateMatcher::with_library(TemplateLibrary::new());
-
-    let mut account_check_auth: Option<FunctionContractSpec> = None;
     for export in exports.entries() {
         let spec_fn = specs::find_spec_for_export(&contract_specs, export);
         if let Some(spec_fn) = spec_fn {
-            let ctx_data = specs::build_pattern_context_data(export, import_count, &code, &functions);
-            let input_types: Vec<String> = spec_fn
-                .inputs()
-                .iter()
-                .map(|p| p.type_ident().to_string())
-                .collect();
-            let addr_indices: Vec<usize> = input_types
-                .iter()
-                .enumerate()
-                .filter_map(|(i, t)| if t.contains("Address") { Some(i) } else { None })
-                .collect();
-            let i128_indices: Vec<usize> = input_types
-                .iter()
-                .enumerate()
-                .filter_map(|(i, t)| if t.contains("i128") { Some(i) } else { None })
-                .collect();
-
-            let ctx = specs::build_pattern_context(
-                &ctx_data,
-                &spec_fn,
-                &string_literals,
-                &data_segments,
-                has_datakey_type,
-                has_allowance_value_type,
-                has_allowance_key_type,
-                has_token_metadata_type,
-                has_signer_variant,
-                has_signer_cnt_variant,
-                has_admin_variant,
-                has_spend_limit_variant,
-                has_counter_variant,
-                has_owner_variant,
-                &data_key_variants,
-                &struct_defs,
-                &input_types,
-                &addr_indices,
-                &i128_indices,
-                is_account_contract,
-            );
-
-            if is_account_contract
-                && (ctx_data.export_name == "__check_auth"
-                    || ctx_data.export_name == "___check_auth")
-            {
-                account_check_auth = Some(spec_fn);
-                continue;
-            }
-
-            // Try template-based generation first (higher priority than hardcoded patterns)
-            if let Some(generated) = template_matcher.try_generate_with_context(&spec_fn, &ctx_data.export_name, &ctx) {
-                writeln!(writer, "{}", generated).map_err(|e| e.to_string())?;
-                continue;
-            }
-
-            // Fallback to existing hardcoded patterns
-            if crate::patterns::try_emit(&mut writer, &spec_fn, &ctx, &mut pattern_state) {
-                continue;
-            }
+            let ctx_data =
+                specs::build_pattern_context_data(export, import_count, &code, &functions);
 
             let mut assigned_params: Vec<bool> = Vec::new();
             let mut fn_index_for_body: Option<u32> = None;
@@ -1152,7 +753,8 @@ impl {contract_name} {"#
                         if let Type::Function(ref fn_type) = types.types()[type_index as usize] {
                             assigned_params = vec![false; fn_type.params().len()];
                             for instr in body.code().elements() {
-                                if let Instruction::SetLocal(i) | Instruction::TeeLocal(i) = *instr {
+                                if let Instruction::SetLocal(i) | Instruction::TeeLocal(i) = *instr
+                                {
                                     if (i as usize) < assigned_params.len() {
                                         assigned_params[i as usize] = true;
                                     }
@@ -1168,23 +770,20 @@ impl {contract_name} {"#
 
             let env_mut = assigned_params.get(0).copied().unwrap_or(false);
             let env_param = if env_mut { "mut env: Env" } else { "env: Env" };
-            write!(
-                writer,
-                "    pub fn {}(&mut self, {}",
-                ctx_data.export_name, env_param
-            )
-            .map_err(|e| e.to_string())?;
+            writeln!(writer, "    pub fn {}(", ctx_data.export_name).map_err(|e| e.to_string())?;
+            writeln!(writer, "        &mut self,").map_err(|e| e.to_string())?;
+            writeln!(writer, "        {},", env_param).map_err(|e| e.to_string())?;
             for (idx, argument) in spec_fn.inputs().iter().enumerate() {
                 let ty = format_type_ident(&argument.type_ident().to_string());
                 let is_mut = assigned_params.get(idx + 1).copied().unwrap_or(false);
                 if is_mut {
-                    write!(writer, ", mut {}: {}", argument.name(), ty)
+                    writeln!(writer, "        mut {}: {},", argument.name(), ty)
                 } else {
-                    write!(writer, ", {}: {}", argument.name(), ty)
+                    writeln!(writer, "        {}: {},", argument.name(), ty)
                 }
                 .map_err(|e| e.to_string())?;
             }
-            write!(writer, ")").map_err(|e| e.to_string())?;
+            write!(writer, "    )").map_err(|e| e.to_string())?;
             if let Some(return_type) = spec_fn.output() {
                 let ty = format_type_ident(&return_type.type_ident().to_string());
                 write!(writer, " -> {}", ty).map_err(|e| e.to_string())?;
@@ -1225,100 +824,60 @@ impl {contract_name} {"#
                         &spec_by_fn_index,
                         fn_index as usize,
                         &data_segments_with_offsets,
-                        &internal_call_forwarders,
+                        &call_forwarders,
+                        &complex_forwarders,
                     );
                     emitted_raw = true;
                 }
             }
             if !emitted_raw {
-                if ctx.has_fail_with_error {
-                    writeln!(writer, "        panic!(\"contract error\");")
-                        .map_err(|e| e.to_string())?;
-                } else {
-                    writeln!(writer, "        panic!(\"decompilation pending\");")
-                        .map_err(|e| e.to_string())?;
-                }
+                writeln!(writer, "        panic!(\"decompilation pending\");")
+                    .map_err(|e| e.to_string())?;
                 writeln!(writer, "    }}").map_err(|e| e.to_string())?;
             }
         }
     }
+    writeln!(writer, "}}").map_err(|e| e.to_string())?;
+    writeln!(writer).map_err(|e| e.to_string())?;
 
+    if emit_raw_helpers {
+        let helper_filter: HashSet<u32> = code
+            .bodies()
+            .iter()
+            .enumerate()
+            .filter_map(|(i, _)| {
+                let fn_index = import_count + i;
+                functions
+                    .get(fn_index)
+                    .and_then(|f| if !f.make_public { Some(fn_index as u32) } else { None })
+            })
+            .collect();
+
+        writeln!(writer, "impl {} {{", contract_name).map_err(|e| e.to_string())?;
+        raw::emit_raw_functions(
+            &mut writer,
+            code,
+            fns,
+            types,
+            import_count,
+            imported_globals_count,
+            &functions,
+            &globals,
+            &mut indirect_fns,
+            &spec_by_fn_index,
+            &data_segments_with_offsets,
+            &call_forwarders,
+            &complex_forwarders,
+            Some(&helper_filter),
+            false,
+        )?;
+        writeln!(writer, "}}").map_err(|e| e.to_string())?;
         writeln!(writer).map_err(|e| e.to_string())?;
-    if is_account_contract {
-        if let Some(spec_fn) = account_check_auth {
-            let ctx_data = specs::PatternContextData {
-                export_name: spec_fn.name().to_string(),
-                has_vec_new: false,
-                uses_string_new: false,
-                uses_symbol_new: false,
-                uses_bytes_new: false,
-                require_auth_calls: 0,
-                require_auth_for_args_calls: 0,
-                uses_current_contract_address: false,
-                symbol_literals: Vec::new(),
-                has_fail_with_error: false,
-                uses_get_contract_data: false,
-                uses_put_contract_data: false,
-                uses_contract_event: false,
-                uses_update_current_contract_wasm: false,
-            };
-            let input_types: Vec<String> = spec_fn
-                .inputs()
-                .iter()
-                .map(|p| p.type_ident().to_string())
-                .collect();
-            let addr_indices: Vec<usize> = input_types
-                .iter()
-                .enumerate()
-                .filter_map(|(i, t)| if t.contains("Address") { Some(i) } else { None })
-                .collect();
-            let i128_indices: Vec<usize> = input_types
-                .iter()
-                .enumerate()
-                .filter_map(|(i, t)| if t.contains("i128") { Some(i) } else { None })
-                .collect();
-            let ctx = specs::build_pattern_context(
-                &ctx_data,
-                &spec_fn,
-                &string_literals,
-                &data_segments,
-                has_datakey_type,
-                has_allowance_value_type,
-                has_allowance_key_type,
-                has_token_metadata_type,
-                has_signer_variant,
-                has_signer_cnt_variant,
-                has_admin_variant,
-                has_spend_limit_variant,
-                has_counter_variant,
-                has_owner_variant,
-                &data_key_variants,
-                &struct_defs,
-                &input_types,
-                &addr_indices,
-                &i128_indices,
-                is_account_contract,
-            );
-            writeln!(writer).map_err(|e| e.to_string())?;
-            writeln!(writer, "#[contractimpl(contracttrait)]").map_err(|e| e.to_string())?;
-            writeln!(
-                writer,
-                "impl CustomAccountInterface for {} {{",
-                contract_name
-            )
-            .map_err(|e| e.to_string())?;
-            writeln!(writer, "    type Signature = Vec<AccSignature>;").map_err(|e| e.to_string())?;
-            writeln!(writer, "    type Error = AccError;").map_err(|e| e.to_string())?;
-            crate::patterns::account::try_emit_check_auth_trait(&mut writer, &spec_fn, &ctx);
-            writeln!(writer, "}}").map_err(|e| e.to_string())?;
-            writeln!(writer).map_err(|e| e.to_string())?;
-            crate::patterns::account::emit_account_helpers(&mut writer);
-        }
     }
-
     let output = String::from_utf8(writer).map_err(|e| e.to_string())?;
     let output = postprocess_memory_macros(output, &contract_name);
     let output = postprocess_remove_unused_methods(output, &contract_name);
+    let output = postprocess_remove_unused_top_level_helpers(output);
     let output = postprocess_apply_patterns(output);
     std::fs::write(output_path, output).map_err(|e| e.to_string())?;
     Ok(())

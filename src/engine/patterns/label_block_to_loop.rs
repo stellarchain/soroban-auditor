@@ -48,9 +48,14 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
                 footer,
             } => {
                 let mut new_body = rewrite(body, changed);
-                if !contains_continue_label(&new_body, &label) && contains_break_label(&new_body, &label) {
+                if !contains_continue_label(&new_body, &label)
+                    && contains_break_label(&new_body, &label)
+                {
                     rewrite_breaks_to_unlabeled(&mut new_body, &label);
-                    let indent = header.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                    let indent = header
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
                     out.push(Node::Block {
                         kind: BlockKind::Loop,
                         label: None,
@@ -97,7 +102,10 @@ fn rewrite_breaks_to_unlabeled(nodes: &mut [Node], label: &str) {
         match node {
             Node::Line(line) => {
                 if line.trim() == target {
-                    let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                    let indent = line
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
                     *line = format!("{indent}break;");
                 }
             }

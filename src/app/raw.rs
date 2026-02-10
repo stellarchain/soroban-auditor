@@ -15,9 +15,16 @@ pub fn emit_raw_functions<W: Write>(
     functions: &[Function],
     globals: &[Global],
     indirect_fns: &mut BTreeMap<u32, Vec<(u32, u32)>>,
-    spec_by_fn_index: &std::collections::HashMap<u32, crate::soroban::contract::FunctionContractSpec>,
+    spec_by_fn_index: &std::collections::HashMap<
+        u32,
+        crate::soroban::contract::FunctionContractSpec,
+    >,
     data_segments: &[crate::decompile::DataSegment],
-    internal_call_forwarders: &std::collections::BTreeMap<u32, crate::app::utils::InternalForwarder>,
+    call_forwarders: &std::collections::BTreeMap<u32, crate::forwarder::CallForwarder>,
+    complex_forwarders: &std::collections::HashMap<
+        u32,
+        crate::engine::forwarder_analyzer::ForwarderInfo,
+    >,
     filter: Option<&std::collections::HashSet<u32>>,
     skip_pure: bool,
 ) -> Result<(), String> {
@@ -106,8 +113,7 @@ pub fn emit_raw_functions<W: Write>(
         if function.make_public {
             write!(writer, "pub ").map_err(|e| e.to_string())?;
         }
-        write!(writer, "fn {}(&mut self, env: &Env", function.name)
-            .map_err(|e| e.to_string())?;
+        write!(writer, "fn {}(&mut self, env: &Env", function.name).map_err(|e| e.to_string())?;
         let spec_fn = spec_by_fn_index.get(&(fn_index as u32));
         for (i, &param) in fn_type.params().iter().enumerate() {
             let param_name = spec_fn
@@ -153,7 +159,8 @@ pub fn emit_raw_functions<W: Write>(
             spec_by_fn_index,
             fn_index,
             data_segments,
-            internal_call_forwarders,
+            call_forwarders,
+            complex_forwarders,
         );
     }
 

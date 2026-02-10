@@ -21,30 +21,45 @@ impl MissingSemicolonsPattern {
             return false;
         }
 
+        // Skip match arms and list/struct entries
+        if trimmed.ends_with(',') || trimmed.contains("=>") {
+            return false;
+        }
+
         // Skip if empty or comment
         if trimmed.is_empty() || trimmed.starts_with("//") {
             return false;
         }
 
-        // Add semicolon for let statements (even if they end with })
+        // Add semicolon for let statements
         if trimmed.starts_with("let ") {
             return true;
         }
 
-        // Add semicolon for assignments (even if they end with })
-        if trimmed.contains(" = ") && !trimmed.ends_with(',') && !trimmed.ends_with('{') {
+        // Add semicolon for explicit control-flow statements
+        if trimmed.starts_with("return ")
+            || trimmed == "return"
+            || trimmed == "break"
+            || trimmed == "continue"
+        {
             return true;
         }
 
-        // Skip if ends with } and not a let/assignment
+        // Add semicolon for plain assignments (avoid comparisons and type/struct fields)
+        if trimmed.contains(" = ")
+            && !trimmed.contains("==")
+            && !trimmed.contains("!=")
+            && !trimmed.contains(">=")
+            && !trimmed.contains("<=")
+            && !trimmed.contains("=>")
+            && !trimmed.contains(':')
+        {
+            return true;
+        }
+
+        // Skip block endings
         if trimmed.ends_with('}') {
             return false;
-        }
-
-        // Add semicolon for expression statements
-        if trimmed.contains("(") && !trimmed.starts_with("if ") && !trimmed.starts_with("while ")
-            && !trimmed.starts_with("for ") && !trimmed.starts_with("match ") {
-            return true;
         }
 
         false

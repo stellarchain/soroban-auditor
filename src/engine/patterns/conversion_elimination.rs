@@ -30,7 +30,7 @@ impl ConversionEliminationPattern {
 
         // Reconstruct line with simplified expression
         let before = &line[..start];
-        let after_pattern = &after[end + 2..];  // Skip past ))
+        let after_pattern = &after[end + 2..]; // Skip past ))
 
         Some(format!("{}{}{}", before, var_name, after_pattern))
     }
@@ -63,7 +63,8 @@ impl ConversionEliminationPattern {
         // Extract type: XXXX::from_val
         let from_val_pos = line.find("::from_val(")?;
         let before = &line[..from_val_pos];
-        let type_start = before.rfind(|c: char| !c.is_alphanumeric() && c != '_' && c != '<' && c != '>' && c != ':')
+        let type_start = before
+            .rfind(|c: char| !c.is_alphanumeric() && c != '_' && c != '<' && c != '>' && c != ':')
             .map(|p| p + 1)
             .unwrap_or(0);
         let type_name = before[type_start..].trim().to_string();
@@ -86,7 +87,8 @@ impl ConversionEliminationPattern {
         // Extract type
         let try_from_pos = line.find("::try_from_val(")?;
         let before = &line[..try_from_pos];
-        let type_start = before.rfind(|c: char| !c.is_alphanumeric() && c != '_' && c != '<' && c != '>' && c != ':')
+        let type_start = before
+            .rfind(|c: char| !c.is_alphanumeric() && c != '_' && c != '<' && c != '>' && c != ':')
             .map(|p| p + 1)
             .unwrap_or(0);
         let type_name = before[type_start..].trim();
@@ -139,7 +141,10 @@ impl Pattern for ConversionEliminationPattern {
                 if let Some((type_name, source_var)) = Self::extract_from_val_conversion(trimmed) {
                     // Extract destination var name
                     let after_let = trimmed.strip_prefix("let ").unwrap().trim_start();
-                    let after_let = after_let.strip_prefix("mut ").unwrap_or(after_let).trim_start();
+                    let after_let = after_let
+                        .strip_prefix("mut ")
+                        .unwrap_or(after_let)
+                        .trim_start();
                     if let Some(eq_pos) = after_let.find(" = ") {
                         let dest_var = after_let[..eq_pos].trim();
 
@@ -147,10 +152,15 @@ impl Pattern for ConversionEliminationPattern {
                         var_types.insert(source_var.clone(), type_name.clone());
 
                         // Only add TODO if not already present
-                        if !new_body.last().map_or(false, |l| l.contains("// TODO: Conversion")) {
+                        if !new_body
+                            .last()
+                            .map_or(false, |l| l.contains("// TODO: Conversion"))
+                        {
                             changed = true;
-                            new_body.push(format!("{}// TODO: Conversion from {} to {} for {}",
-                                indent_str, source_var, type_name, dest_var));
+                            new_body.push(format!(
+                                "{}// TODO: Conversion from {} to {} for {}",
+                                indent_str, source_var, type_name, dest_var
+                            ));
                         }
                         new_body.push(line.clone());
                         continue;
@@ -160,10 +170,15 @@ impl Pattern for ConversionEliminationPattern {
                 // Extract: let res_val = ... val_to_i64(x.into_val(&env))
                 if let Some(source_var) = Self::extract_into_val_conversion(trimmed) {
                     // This is a redundant conversion - x is the real value
-                    if !new_body.last().map_or(false, |l| l.contains("// TODO: Remove val_to_i64")) {
+                    if !new_body
+                        .last()
+                        .map_or(false, |l| l.contains("// TODO: Remove val_to_i64"))
+                    {
                         changed = true;
-                        new_body.push(format!("{}// TODO: Remove val_to_i64 conversion, use {} directly",
-                            indent_str, source_var));
+                        new_body.push(format!(
+                            "{}// TODO: Remove val_to_i64 conversion, use {} directly",
+                            indent_str, source_var
+                        ));
                     }
                     new_body.push(line.clone());
                     continue;
@@ -174,10 +189,15 @@ impl Pattern for ConversionEliminationPattern {
             if trimmed.contains("::try_from_val(") && trimmed.contains(".is_ok()") {
                 if let Some((type_name, var_name)) = Self::extract_type_check(trimmed) {
                     var_types.insert(var_name.clone(), type_name.clone());
-                    if !new_body.last().map_or(false, |l| l.contains("// TODO: Type check")) {
+                    if !new_body
+                        .last()
+                        .map_or(false, |l| l.contains("// TODO: Type check"))
+                    {
                         changed = true;
-                        new_body.push(format!("{}// TODO: Type check for {} as {}",
-                            indent_str, var_name, type_name));
+                        new_body.push(format!(
+                            "{}// TODO: Type check for {} as {}",
+                            indent_str, var_name, type_name
+                        ));
                     }
                     new_body.push(line.clone());
                     continue;
@@ -217,7 +237,10 @@ mod tests {
     fn test_extract_from_val_conversion() {
         let line = "let var = Vec::<Val>::from_val(env, &val_from_i64(feed_ids));";
         let result = ConversionEliminationPattern::extract_from_val_conversion(line);
-        assert_eq!(result, Some(("Vec::<Val>".to_string(), "feed_ids".to_string())));
+        assert_eq!(
+            result,
+            Some(("Vec::<Val>".to_string(), "feed_ids".to_string()))
+        );
     }
 
     #[test]

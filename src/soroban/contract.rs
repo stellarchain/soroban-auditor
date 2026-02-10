@@ -1,5 +1,7 @@
 use crate::wasm_ir::mangle_fn_name;
 use proc_macro2::TokenStream;
+use soroban_sdk::xdr::ScSpecEntry;
+use soroban_sdk::xdr::ScSpecTypeDef;
 use soroban_spec::read::from_wasm;
 use soroban_spec_rust::types::generate_enum;
 use soroban_spec_rust::types::generate_error_enum;
@@ -10,8 +12,6 @@ use soroban_spec_rust::types::generate_union;
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
-use soroban_sdk::xdr::ScSpecEntry;
-use soroban_sdk::xdr::ScSpecTypeDef;
 
 #[derive(Clone)]
 pub struct FunctionSpecResults {
@@ -70,7 +70,13 @@ impl fmt::Display for FunctionContractSpec {
             None => "".to_string(),
         };
 
-        write!(f, "\tpub fn {}(&mut self{}) {}", mangle_fn_name(self.name.as_str()), inputs_str.join(""), output_str)
+        write!(
+            f,
+            "\tpub fn {}(&mut self{}) {}",
+            mangle_fn_name(self.name.as_str()),
+            inputs_str.join(""),
+            output_str
+        )
     }
 }
 #[derive(Clone)]
@@ -129,8 +135,11 @@ impl ContractSpecs {
     }
 }
 
-pub fn find_function_specs(specs: &ContractSpecs, function_name_to_find: &str) -> Option<FunctionContractSpec> {
-     for function_info in &specs.functions {
+pub fn find_function_specs(
+    specs: &ContractSpecs,
+    function_name_to_find: &str,
+) -> Option<FunctionContractSpec> {
+    for function_info in &specs.functions {
         if function_info.name == function_name_to_find {
             return Some(function_info.clone());
         }

@@ -93,7 +93,11 @@ fn try_collapse_loop(header: &str, body: &[Node]) -> Option<Node> {
         return None;
     }
     let if_node = match &nodes[0] {
-        Node::Block { kind: BlockKind::If, body, .. } => {
+        Node::Block {
+            kind: BlockKind::If,
+            body,
+            ..
+        } => {
             if contains_control_in_nodes(body) {
                 return None;
             }
@@ -105,7 +109,10 @@ fn try_collapse_loop(header: &str, body: &[Node]) -> Option<Node> {
         Node::Line(line) if line.trim() == "unreachable!();" => {}
         _ => return None,
     }
-    let indent = header.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+    let indent = header
+        .chars()
+        .take_while(|c| c.is_whitespace())
+        .collect::<String>();
     let else_block = Node::Block {
         kind: BlockKind::Else,
         label: None,
@@ -138,7 +145,11 @@ fn contains_control_in_nodes(nodes: &[Node]) -> bool {
         match node {
             Node::Line(line) => {
                 let t = line.trim();
-                if t == "break;" || t.starts_with("break '") || t == "continue;" || t.starts_with("continue '") {
+                if t == "break;"
+                    || t.starts_with("break '")
+                    || t == "continue;"
+                    || t.starts_with("continue '")
+                {
                     return true;
                 }
             }

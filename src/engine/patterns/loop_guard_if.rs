@@ -59,7 +59,12 @@ fn rewrite_sequence(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
 
 fn try_rewrite_guard_loop(nodes: &[Node], idx: usize) -> Option<(Vec<Node>, usize)> {
     let loop_node = match nodes.get(idx)? {
-        Node::Block { kind: BlockKind::Loop, header, body, .. } => (header, body),
+        Node::Block {
+            kind: BlockKind::Loop,
+            header,
+            body,
+            ..
+        } => (header, body),
         _ => return None,
     };
     let (next_idx, _next_line) = next_non_empty_line(nodes, idx + 1)?;
@@ -70,7 +75,11 @@ fn try_rewrite_guard_loop(nodes: &[Node], idx: usize) -> Option<(Vec<Node>, usiz
     if contains_break_or_continue_at_depth0(&rest) {
         return None;
     }
-    let indent = loop_node.0.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+    let indent = loop_node
+        .0
+        .chars()
+        .take_while(|c| c.is_whitespace())
+        .collect::<String>();
 
     let mut guard_body = strip_trailing_break(&guard_if.body)?;
     if guard_body.is_empty() {
@@ -121,7 +130,12 @@ struct GuardIf {
 fn split_guard_if(body: &[Node]) -> Option<(GuardIf, Vec<Node>)> {
     let first = body.first()?;
     let guard = match first {
-        Node::Block { kind: BlockKind::If, header, body, .. } => GuardIf {
+        Node::Block {
+            kind: BlockKind::If,
+            header,
+            body,
+            ..
+        } => GuardIf {
             header: header.clone(),
             body: body.clone(),
         },
@@ -153,7 +167,11 @@ fn contains_break_or_continue_at_depth0(nodes: &[Node]) -> bool {
         match node {
             Node::Line(line) => {
                 let t = line.trim();
-                if t == "break;" || t == "continue;" || t.starts_with("break '") || t.starts_with("continue '") {
+                if t == "break;"
+                    || t == "continue;"
+                    || t.starts_with("break '")
+                    || t.starts_with("continue '")
+                {
                     return true;
                 }
             }
@@ -172,7 +190,12 @@ fn contains_break_or_continue_at_depth0(nodes: &[Node]) -> bool {
 
 fn dedent_block(node: &mut Node, spaces: usize) {
     match node {
-        Node::Block { header, body, footer, .. } => {
+        Node::Block {
+            header,
+            body,
+            footer,
+            ..
+        } => {
             *header = dedent_line(header, spaces);
             *footer = dedent_line(footer, spaces);
             for child in body.iter_mut() {
@@ -188,7 +211,12 @@ fn dedent_node(node: &mut Node, spaces: usize) {
         Node::Line(line) => {
             *line = dedent_line(line, spaces);
         }
-        Node::Block { header, body, footer, .. } => {
+        Node::Block {
+            header,
+            body,
+            footer,
+            ..
+        } => {
             *header = dedent_line(header, spaces);
             *footer = dedent_line(footer, spaces);
             for child in body.iter_mut() {

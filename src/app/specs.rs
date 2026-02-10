@@ -1,4 +1,3 @@
-use crate::patterns::PatternContext;
 use crate::sdk::get_backend;
 use crate::wasm_ir::mangle_fn_name;
 use parity_wasm::elements::{CodeSection, Internal};
@@ -133,64 +132,6 @@ pub fn build_pattern_context_data(
         uses_put_contract_data,
         uses_contract_event,
         uses_update_current_contract_wasm,
-    }
-}
-
-pub fn build_pattern_context<'a>(
-    ctx_data: &'a PatternContextData,
-    _spec_fn: &'a crate::soroban::contract::FunctionContractSpec,
-    string_literals: &'a [String],
-    data_segments: &'a [Vec<u8>],
-    has_datakey_type: bool,
-    has_allowance_value_type: bool,
-    has_allowance_key_type: bool,
-    has_token_metadata_type: bool,
-    has_signer_variant: bool,
-    has_signer_cnt_variant: bool,
-    has_admin_variant: bool,
-    has_spend_limit_variant: bool,
-    has_counter_variant: bool,
-    has_owner_variant: bool,
-    data_key_variants: &'a [crate::app::utils::DataKeyVariant],
-    struct_defs: &'a [crate::app::utils::StructDef],
-    input_types: &'a [String],
-    addr_indices: &'a [usize],
-    i128_indices: &'a [usize],
-    is_account_contract: bool,
-) -> PatternContext<'a> {
-    PatternContext {
-        export_name: &ctx_data.export_name,
-        input_types,
-        addr_indices,
-        i128_indices,
-        has_vec_new: ctx_data.has_vec_new,
-        uses_string_new: ctx_data.uses_string_new,
-        uses_symbol_new: ctx_data.uses_symbol_new,
-        uses_bytes_new: ctx_data.uses_bytes_new,
-        require_auth_calls: ctx_data.require_auth_calls,
-        require_auth_for_args_calls: ctx_data.require_auth_for_args_calls,
-        uses_current_contract_address: ctx_data.uses_current_contract_address,
-        symbol_literals: &ctx_data.symbol_literals,
-        string_literals,
-        data_segments,
-        has_fail_with_error: ctx_data.has_fail_with_error,
-        uses_get_contract_data: ctx_data.uses_get_contract_data,
-        uses_put_contract_data: ctx_data.uses_put_contract_data,
-        uses_contract_event: ctx_data.uses_contract_event,
-        has_datakey_type,
-        has_allowance_value_type,
-        has_allowance_key_type,
-        has_token_metadata_type,
-        has_signer_variant,
-        has_signer_cnt_variant,
-        has_admin_variant,
-        has_spend_limit_variant,
-        has_counter_variant,
-        has_owner_variant,
-        data_key_variants,
-        struct_defs,
-        uses_update_current_contract_wasm: ctx_data.uses_update_current_contract_wasm,
-        is_account_contract,
     }
 }
 

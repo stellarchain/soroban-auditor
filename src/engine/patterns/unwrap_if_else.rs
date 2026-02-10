@@ -40,7 +40,13 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
     let mut out = Vec::new();
     for node in nodes {
         match node {
-            Node::Block { kind: BlockKind::Other, label: None, header, body, footer } => {
+            Node::Block {
+                kind: BlockKind::Other,
+                label: None,
+                header,
+                body,
+                footer,
+            } => {
                 if header.trim() == "{" && footer.trim() == "}" && can_unwrap(&body) {
                     let mut dedented = body;
                     for child in dedented.iter_mut() {
@@ -51,11 +57,29 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
                     continue;
                 }
                 let new_body = rewrite(body, changed);
-                out.push(Node::Block { kind: BlockKind::Other, label: None, header, body: new_body, footer });
+                out.push(Node::Block {
+                    kind: BlockKind::Other,
+                    label: None,
+                    header,
+                    body: new_body,
+                    footer,
+                });
             }
-            Node::Block { kind, label, header, body, footer } => {
+            Node::Block {
+                kind,
+                label,
+                header,
+                body,
+                footer,
+            } => {
                 let new_body = rewrite(body, changed);
-                out.push(Node::Block { kind, label, header, body: new_body, footer });
+                out.push(Node::Block {
+                    kind,
+                    label,
+                    header,
+                    body: new_body,
+                    footer,
+                });
             }
             Node::Line(line) => out.push(Node::Line(line)),
         }
@@ -64,7 +88,10 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
 }
 
 fn can_unwrap(body: &[Node]) -> bool {
-    let nodes: Vec<&Node> = body.iter().filter(|n| !matches!(n, Node::Line(line) if line.trim().is_empty())).collect();
+    let nodes: Vec<&Node> = body
+        .iter()
+        .filter(|n| !matches!(n, Node::Line(line) if line.trim().is_empty()))
+        .collect();
     if nodes.len() < 2 {
         return false;
     }
@@ -78,8 +105,19 @@ fn can_unwrap(body: &[Node]) -> bool {
     if idx + 1 >= nodes.len() {
         return false;
     }
-    matches!(nodes[idx], Node::Block { kind: BlockKind::If, .. }) &&
-        matches!(nodes[idx + 1], Node::Block { kind: BlockKind::Else, .. })
+    matches!(
+        nodes[idx],
+        Node::Block {
+            kind: BlockKind::If,
+            ..
+        }
+    ) && matches!(
+        nodes[idx + 1],
+        Node::Block {
+            kind: BlockKind::Else,
+            ..
+        }
+    )
 }
 
 fn dedent_node(node: &mut Node, spaces: usize) {
@@ -87,7 +125,12 @@ fn dedent_node(node: &mut Node, spaces: usize) {
         Node::Line(line) => {
             *line = dedent_line(line, spaces);
         }
-        Node::Block { header, body, footer, .. } => {
+        Node::Block {
+            header,
+            body,
+            footer,
+            ..
+        } => {
             *header = dedent_line(header, spaces);
             *footer = dedent_line(footer, spaces);
             for child in body.iter_mut() {

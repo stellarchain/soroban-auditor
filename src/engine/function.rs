@@ -15,7 +15,10 @@ pub fn split_functions(input: &str) -> Vec<FunctionBlock> {
         let line = lines[i];
         let trimmed = line.trim_start();
         if trimmed.starts_with("fn ") || trimmed.starts_with("pub fn ") {
-            let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+            let indent = line
+                .chars()
+                .take_while(|c| c.is_whitespace())
+                .collect::<String>();
             let name_src = if trimmed.starts_with("pub fn ") {
                 &trimmed["pub fn ".len()..]
             } else {
@@ -25,9 +28,21 @@ pub fn split_functions(input: &str) -> Vec<FunctionBlock> {
                 .chars()
                 .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
                 .collect::<String>();
+            let mut header_lines = vec![line.to_string()];
             let mut depth: i32 = line.chars().filter(|&c| c == '{').count() as i32
                 - line.chars().filter(|&c| c == '}').count() as i32;
-            let header = line.to_string();
+            let mut saw_open_brace = line.contains('{');
+            while i + 1 < lines.len() && !saw_open_brace {
+                i += 1;
+                let header_line = lines[i];
+                header_lines.push(header_line.to_string());
+                depth += header_line.chars().filter(|&c| c == '{').count() as i32;
+                depth -= header_line.chars().filter(|&c| c == '}').count() as i32;
+                if header_line.contains('{') {
+                    saw_open_brace = true;
+                }
+            }
+            let header = header_lines.join("\n");
             i += 1;
             let body_start = i;
             while i < lines.len() && depth > 0 {
@@ -36,10 +51,14 @@ pub fn split_functions(input: &str) -> Vec<FunctionBlock> {
                 i += 1;
             }
             let body_end = i.saturating_sub(1);
-            let body = lines[body_start..body_end]
-                .iter()
-                .map(|l| (*l).to_string())
-                .collect::<Vec<String>>();
+            let body = if body_start < body_end && body_end <= lines.len() {
+                lines[body_start..body_end]
+                    .iter()
+                    .map(|l| (*l).to_string())
+                    .collect::<Vec<String>>()
+            } else {
+                Vec::new()
+            };
             let footer = lines.get(body_end).copied().unwrap_or("").to_string();
             out.push(FunctionBlock {
                 header,

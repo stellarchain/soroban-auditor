@@ -178,7 +178,11 @@ fn contains_continue_at_loop_depth0(body: &[Node], loop_depth: usize) -> bool {
                 }
             }
             Node::Block { kind, body, .. } => {
-                let next_depth = if *kind == BlockKind::Loop { loop_depth + 1 } else { loop_depth };
+                let next_depth = if *kind == BlockKind::Loop {
+                    loop_depth + 1
+                } else {
+                    loop_depth
+                };
                 if contains_continue_at_loop_depth0(body, next_depth) {
                     return true;
                 }
@@ -197,13 +201,20 @@ fn rewrite_breaks_in_nodes(label: &str, body: &mut [Node], changed: &mut bool, l
         match node {
             Node::Line(line) => {
                 if loop_depth == 0 && line.trim() == "break;" {
-                    let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                    let indent = line
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
                     *line = format!("{indent}break '{};", label);
                     *changed = true;
                 }
             }
             Node::Block { kind, body, .. } => {
-                let next_depth = if *kind == BlockKind::Loop { loop_depth + 1 } else { loop_depth };
+                let next_depth = if *kind == BlockKind::Loop {
+                    loop_depth + 1
+                } else {
+                    loop_depth
+                };
                 rewrite_breaks_in_nodes(label, body, changed, next_depth);
             }
         }

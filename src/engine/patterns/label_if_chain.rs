@@ -124,7 +124,10 @@ fn try_if_chain(label: &str, header: &str, body: &[Node]) -> Option<Vec<String>>
         return None;
     }
 
-    let indent = header.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+    let indent = header
+        .chars()
+        .take_while(|c| c.is_whitespace())
+        .collect::<String>();
     let mut lines: Vec<String> = Vec::new();
     for (i, (cond, body_lines)) in ifs.iter().enumerate() {
         if i == 0 {

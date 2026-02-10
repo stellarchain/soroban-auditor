@@ -303,7 +303,11 @@ fn extract_datakey_param(line: &str) -> Option<(String, String)> {
     None
 }
 
-fn rename_variables(nodes: Vec<Node>, suggestions: &HashMap<String, String>, changed: &mut bool) -> Vec<Node> {
+fn rename_variables(
+    nodes: Vec<Node>,
+    suggestions: &HashMap<String, String>,
+    changed: &mut bool,
+) -> Vec<Node> {
     let mut out: Vec<Node> = Vec::new();
 
     for node in nodes {
@@ -312,7 +316,13 @@ fn rename_variables(nodes: Vec<Node>, suggestions: &HashMap<String, String>, cha
                 let new_line = rename_in_line(&line, suggestions, changed);
                 out.push(Node::Line(new_line));
             }
-            Node::Block { kind, label, header, body, footer } => {
+            Node::Block {
+                kind,
+                label,
+                header,
+                body,
+                footer,
+            } => {
                 let new_body = rename_variables(body, suggestions, changed);
                 out.push(Node::Block {
                     kind,
@@ -334,7 +344,8 @@ fn rename_in_line(line: &str, suggestions: &HashMap<String, String>, changed: &m
     for (old_name, new_name) in suggestions {
         // Only rename whole words (not substrings)
         // Escape special regex characters in old_name
-        let escaped = old_name.replace('\\', "\\\\")
+        let escaped = old_name
+            .replace('\\', "\\\\")
             .replace('.', "\\.")
             .replace('*', "\\*")
             .replace('+', "\\+")

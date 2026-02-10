@@ -16,7 +16,13 @@ impl Fingerprint {
     pub fn short(&self) -> String {
         format!(
             "h={:016x} i={} l={} ci={} cn={} m={} b={}",
-            self.hash, self.instrs, self.locals, self.calls_import, self.calls_internal, self.memops, self.blocks
+            self.hash,
+            self.instrs,
+            self.locals,
+            self.calls_import,
+            self.calls_internal,
+            self.memops,
+            self.blocks
         )
     }
 }

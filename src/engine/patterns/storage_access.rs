@@ -58,7 +58,13 @@ fn rewrite_storage_access(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
                 let new_line = simplify_storage_line(&line, changed);
                 out.push(Node::Line(new_line));
             }
-            Node::Block { kind, label, header, body, footer } => {
+            Node::Block {
+                kind,
+                label,
+                header,
+                body,
+                footer,
+            } => {
                 let new_body = rewrite_storage_access(body, changed);
                 out.push(Node::Block {
                     kind,
@@ -118,9 +124,7 @@ fn extract_key_from_get(line: &str) -> Option<String> {
 }
 
 fn get_indent(line: &str) -> String {
-    line.chars()
-        .take_while(|c| c.is_whitespace())
-        .collect()
+    line.chars().take_while(|c| c.is_whitespace()).collect()
 }
 
 #[cfg(test)]
@@ -129,7 +133,8 @@ mod tests {
 
     #[test]
     fn test_storage_get_pattern() {
-        let line = "        let balance = env.storage().instance().get(&DataKey::Balance(user)).unwrap();";
+        let line =
+            "        let balance = env.storage().instance().get(&DataKey::Balance(user)).unwrap();";
         let mut changed = false;
         let result = simplify_storage_line(line, &mut changed);
         // Test that we recognize the pattern

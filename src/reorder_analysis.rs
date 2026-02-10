@@ -1,8 +1,9 @@
-use parity_wasm::elements::{BlockType,
-                            Instruction::{self, *},
-                            Type,
-                            TypeSection};
 use crate::wasm_ir::{BlockKind, Function};
+use parity_wasm::elements::{
+    BlockType,
+    Instruction::{self, *},
+    Type, TypeSection,
+};
 
 pub fn can_local_be_reordered(
     local_to_load: u32,
@@ -19,7 +20,7 @@ pub fn can_local_be_reordered(
             BlockKind::Block { ref dst_var, .. } | BlockKind::If { ref dst_var, .. } => {
                 (-1, dst_var.is_some(), true)
             }
-            | BlockKind::Loop { ref dst_var, .. } => (-1, dst_var.is_some(), false),
+            BlockKind::Loop { ref dst_var, .. } => (-1, dst_var.is_some(), false),
         })
         .collect::<Vec<_>>();
 

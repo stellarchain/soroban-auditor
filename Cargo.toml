@@ -4,6 +4,18 @@ version = "0.2.0"
 authors = ["StellarChain <support@stellarchain.io>"]
 edition = "2021"
 
+[[bin]]
+name = "soroban-auditor"
+path = "src/main.rs"
+
+[[bin]]
+name = "sdk-analyze"
+path = "src/bin/sdk-analyze.rs"
+
+[lib]
+name = "soroban_auditor"
+path = "src/lib.rs"
+
 [dependencies]
 lcs = "0.2.0"
 levenshtein = "1.0.5"

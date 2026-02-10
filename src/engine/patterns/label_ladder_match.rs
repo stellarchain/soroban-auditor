@@ -88,7 +88,10 @@ fn try_rewrite_ladder(node: &Node) -> Option<Vec<String>> {
     }
     let (match_header, match_body, match_footer) = match match_block {
         Node::Block {
-            header, body, footer, ..
+            header,
+            body,
+            footer,
+            ..
         } => (header, body, footer),
         _ => return None,
     };
@@ -150,11 +153,19 @@ fn extract_ladder(node: &Node) -> Option<(Node, HashMap<String, Vec<String>>, Ve
                 }
 
                 match inner_block {
-                    Node::Block { kind: BlockKind::Loop, .. } => {
+                    Node::Block {
+                        kind: BlockKind::Loop,
+                        ..
+                    } => {
                         current = inner_block;
                         continue;
                     }
-                    Node::Block { header, body, footer, .. } => {
+                    Node::Block {
+                        header,
+                        body,
+                        footer,
+                        ..
+                    } => {
                         if header.trim_start().starts_with("match ") {
                             last_match = Some(Node::Block {
                                 kind: BlockKind::Other,
@@ -203,7 +214,11 @@ fn parse_match_arms(lines: &[Node]) -> Option<Vec<(String, String)>> {
             }
         }
     }
-    if out.is_empty() { None } else { Some(out) }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
 }
 
 fn trim_trailing_breaks(lines: &mut Vec<String>) {
@@ -234,7 +249,10 @@ fn split_loop_body(body: Vec<Node>) -> Option<(Vec<Node>, Node, Vec<Node>)> {
     let mut idx = None;
     for (i, node) in body.iter().enumerate() {
         match node {
-            Node::Block { kind: BlockKind::Loop, .. } => {
+            Node::Block {
+                kind: BlockKind::Loop,
+                ..
+            } => {
                 idx = Some(i);
                 break;
             }

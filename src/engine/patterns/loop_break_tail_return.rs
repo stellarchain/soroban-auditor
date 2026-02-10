@@ -41,12 +41,22 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
     let mut i = 0usize;
     while i < nodes.len() {
         let node = nodes[i].clone();
-        if let Node::Block { kind: BlockKind::Loop, label, header, body, footer } = node {
+        if let Node::Block {
+            kind: BlockKind::Loop,
+            label,
+            header,
+            body,
+            footer,
+        } = node
+        {
             if let Some((tail_return, tail_len)) = find_tail_return(&nodes, i + 1) {
                 let mut local_changed = false;
                 let new_body = replace_breaks(&body, &tail_return, &mut local_changed);
                 if local_changed && !contains_break_or_continue_outside_loops(&new_body) {
-                    let indent = header.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                    let indent = header
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
                     out.push(Node::Block {
                         kind: BlockKind::Other,
                         label,
@@ -60,7 +70,13 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
                 }
             }
             let new_body = rewrite(body, changed);
-            out.push(Node::Block { kind: BlockKind::Loop, label, header, body: new_body, footer });
+            out.push(Node::Block {
+                kind: BlockKind::Loop,
+                label,
+                header,
+                body: new_body,
+                footer,
+            });
             i += 1;
             continue;
         }
@@ -125,7 +141,10 @@ fn replace_breaks(nodes: &[Node], tail_return: &[String], changed: &mut bool) ->
         match node {
             Node::Line(line) => {
                 if line.trim() == "break;" {
-                    let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                    let indent = line
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
                     for tail in tail_return {
                         out.push(Node::Line(format!("{indent}{}", tail)));
                     }
@@ -134,13 +153,28 @@ fn replace_breaks(nodes: &[Node], tail_return: &[String], changed: &mut bool) ->
                     out.push(Node::Line(line.clone()));
                 }
             }
-            Node::Block { kind: BlockKind::Loop, .. } => {
+            Node::Block {
+                kind: BlockKind::Loop,
+                ..
+            } => {
                 // Do not rewrite breaks inside nested loops.
                 out.push(node.clone());
             }
-            Node::Block { kind, label, header, body, footer } => {
+            Node::Block {
+                kind,
+                label,
+                header,
+                body,
+                footer,
+            } => {
                 let new_body = replace_breaks(body, tail_return, changed);
-                out.push(Node::Block { kind: kind.clone(), label: label.clone(), header: header.clone(), body: new_body, footer: footer.clone() });
+                out.push(Node::Block {
+                    kind: kind.clone(),
+                    label: label.clone(),
+                    header: header.clone(),
+                    body: new_body,
+                    footer: footer.clone(),
+                });
             }
         }
     }
@@ -152,11 +186,18 @@ fn contains_break_or_continue_outside_loops(nodes: &[Node]) -> bool {
         match node {
             Node::Line(line) => {
                 let t = line.trim();
-                if t == "break;" || t == "continue;" || t.starts_with("break '") || t.starts_with("continue '") {
+                if t == "break;"
+                    || t == "continue;"
+                    || t.starts_with("break '")
+                    || t.starts_with("continue '")
+                {
                     return true;
                 }
             }
-            Node::Block { kind: BlockKind::Loop, .. } => {}
+            Node::Block {
+                kind: BlockKind::Loop,
+                ..
+            } => {}
             Node::Block { body, .. } => {
                 if contains_break_or_continue_outside_loops(body) {
                     return true;

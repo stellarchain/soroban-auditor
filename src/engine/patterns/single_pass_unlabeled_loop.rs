@@ -50,7 +50,10 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
                 let mut new_body = rewrite(body, changed);
                 if !contains_continue(&new_body) && ends_with_break(&new_body) {
                     trim_trailing_break(&mut new_body);
-                    let indent = header.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                    let indent = header
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
                     out.push(Node::Block {
                         kind: BlockKind::Other,
                         label: None,

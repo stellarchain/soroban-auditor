@@ -142,7 +142,10 @@ fn rewrite_unused_labels(
             Node::Line(line) => {
                 if let Some((kind, label)) = parse_label_control(&line) {
                     if !defined.contains(&label) {
-                        let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                        let indent = line
+                            .chars()
+                            .take_while(|c| c.is_whitespace())
+                            .collect::<String>();
                         let new_line = match kind {
                             ControlKind::Break => format!("{indent}break;"),
                             ControlKind::Continue => format!("{indent}continue;"),
@@ -212,7 +215,12 @@ fn replace_inline_label_controls(line: &str, defined: &HashSet<String>) -> Optio
             }
         };
         out.push_str(&rest[..pos]);
-        let after = &rest[pos + if matches!(kind, ControlKind::Break) { "break '".len() } else { "continue '".len() }..];
+        let after = &rest[pos
+            + if matches!(kind, ControlKind::Break) {
+                "break '".len()
+            } else {
+                "continue '".len()
+            }..];
         let label = after
             .chars()
             .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
@@ -237,17 +245,27 @@ fn replace_inline_label_controls(line: &str, defined: &HashSet<String>) -> Optio
         }
         rest = tail;
     }
-    if changed { Some(out) } else { None }
+    if changed {
+        Some(out)
+    } else {
+        None
+    }
 }
 
 fn collect_defined_labels(nodes: &[Node], defined: &mut HashSet<String>) {
     for node in nodes {
         match node {
-            Node::Block { label: Some(label), body, .. } => {
+            Node::Block {
+                label: Some(label),
+                body,
+                ..
+            } => {
                 defined.insert(label.clone());
                 collect_defined_labels(body, defined);
             }
-            Node::Block { label: None, body, .. } => collect_defined_labels(body, defined),
+            Node::Block {
+                label: None, body, ..
+            } => collect_defined_labels(body, defined),
             Node::Line(_) => {}
         }
     }

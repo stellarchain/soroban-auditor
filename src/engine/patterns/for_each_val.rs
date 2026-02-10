@@ -108,7 +108,11 @@ fn try_rewrite_loop(body: &[Node]) -> Option<Vec<String>> {
     let item_var = item_var.unwrap_or_else(|| "val".to_string());
     let indent = lines
         .first()
-        .map(|l| l.chars().take_while(|c| c.is_whitespace()).collect::<String>())
+        .map(|l| {
+            l.chars()
+                .take_while(|c| c.is_whitespace())
+                .collect::<String>()
+        })
         .unwrap_or_default();
 
     let mut replacement: Vec<String> = Vec::new();
@@ -147,7 +151,11 @@ fn extract_let_ident(line: &str) -> Option<String> {
             break;
         }
     }
-    if ident.is_empty() { None } else { Some(ident) }
+    if ident.is_empty() {
+        None
+    } else {
+        Some(ident)
+    }
 }
 
 fn extract_receiver_ident(line: &str, suffix: &str) -> Option<String> {
@@ -161,7 +169,11 @@ fn extract_receiver_ident(line: &str, suffix: &str) -> Option<String> {
             break;
         }
     }
-    if ident.is_empty() { None } else { Some(ident) }
+    if ident.is_empty() {
+        None
+    } else {
+        Some(ident)
+    }
 }
 
 fn looks_like_len_line(line: &str) -> bool {

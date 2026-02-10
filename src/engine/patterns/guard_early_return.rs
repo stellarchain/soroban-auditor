@@ -41,9 +41,22 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
     let mut i = 0usize;
     while i < nodes.len() {
         if let Some((label, tail_return)) = match_guard_block(&nodes, i) {
-            if let Node::Block { kind, label: block_label, header, body, footer } = nodes[i].clone() {
+            if let Node::Block {
+                kind,
+                label: block_label,
+                header,
+                body,
+                footer,
+            } = nodes[i].clone()
+            {
                 let new_body = replace_guard_breaks(body, &label, &tail_return, changed);
-                out.push(Node::Block { kind, label: block_label, header, body: new_body, footer });
+                out.push(Node::Block {
+                    kind,
+                    label: block_label,
+                    header,
+                    body: new_body,
+                    footer,
+                });
                 i += 1;
                 continue;
             }
@@ -62,8 +75,16 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
 fn match_guard_block(nodes: &[Node], idx: usize) -> Option<(String, Vec<String>)> {
     let block = nodes.get(idx)?;
     let (label, indent) = match block {
-        Node::Block { kind: BlockKind::Other, label: Some(label), header, .. } if label.starts_with("__if_guard") => {
-            let indent = header.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+        Node::Block {
+            kind: BlockKind::Other,
+            label: Some(label),
+            header,
+            ..
+        } if label.starts_with("__if_guard") => {
+            let indent = header
+                .chars()
+                .take_while(|c| c.is_whitespace())
+                .collect::<String>();
             (label.clone(), indent)
         }
         _ => return None,
@@ -114,7 +135,10 @@ fn replace_guard_breaks(
         match node {
             Node::Line(line) => {
                 if line.contains(&format!("break '{label};")) {
-                    let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                    let indent = line
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
                     for tail in tail_return {
                         out.push(Node::Line(format!("{indent}{}", tail)));
                     }
@@ -123,9 +147,21 @@ fn replace_guard_breaks(
                     out.push(Node::Line(line));
                 }
             }
-            Node::Block { kind, label: block_label, header, body, footer } => {
+            Node::Block {
+                kind,
+                label: block_label,
+                header,
+                body,
+                footer,
+            } => {
                 let new_body = replace_guard_breaks(body, label, tail_return, changed);
-                out.push(Node::Block { kind, label: block_label, header, body: new_body, footer });
+                out.push(Node::Block {
+                    kind,
+                    label: block_label,
+                    header,
+                    body: new_body,
+                    footer,
+                });
             }
         }
     }

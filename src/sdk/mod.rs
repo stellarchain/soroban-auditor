@@ -4,6 +4,12 @@ use std::path::Path;
 pub use crate::soroban::common::ModuleFunction;
 pub use crate::soroban::contract::{ContractSpecs, FunctionContractSpec};
 
+mod analyzer;
+mod detector;
+
+pub use analyzer::{FunctionUsage, SdkUsageAnalyzer, SdkUsageReport};
+pub use detector::{FunctionCategory, SdkArg, SdkFunctionDetector, SdkFunctionInfo};
+
 pub trait SdkBackend {
     fn name(&self) -> &'static str;
     fn env_common_modules_result(&self) -> Result<Vec<Value>, Box<dyn std::error::Error>>;

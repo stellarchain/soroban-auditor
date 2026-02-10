@@ -54,7 +54,13 @@ fn simplify_math(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
                 let new_line = simplify_math_line(&line, changed);
                 out.push(Node::Line(new_line));
             }
-            Node::Block { kind, label, header, body, footer } => {
+            Node::Block {
+                kind,
+                label,
+                header,
+                body,
+                footer,
+            } => {
                 let new_body = simplify_math(body, changed);
                 out.push(Node::Block {
                     kind,
@@ -149,9 +155,7 @@ fn is_fee_calculation(line: &str) -> bool {
 }
 
 fn get_indent(line: &str) -> String {
-    line.chars()
-        .take_while(|c| c.is_whitespace())
-        .collect()
+    line.chars().take_while(|c| c.is_whitespace()).collect()
 }
 
 #[cfg(test)]

@@ -98,7 +98,12 @@ pub fn build_cfg(instrs: &[Instruction]) -> Cfg {
     }
 }
 
-pub fn resolve_label_target(instrs: &[Instruction], cfg: &Cfg, depth: u32, at: usize) -> Option<LabelTarget> {
+pub fn resolve_label_target(
+    instrs: &[Instruction],
+    cfg: &Cfg,
+    depth: u32,
+    at: usize,
+) -> Option<LabelTarget> {
     let mut stack: Vec<usize> = Vec::new();
     for (idx, instr) in instrs.iter().enumerate() {
         match instr {

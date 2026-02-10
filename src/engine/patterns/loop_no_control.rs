@@ -40,10 +40,19 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
     let mut out = Vec::new();
     for node in nodes {
         match node {
-            Node::Block { kind: BlockKind::Loop, label, header, body, footer } => {
+            Node::Block {
+                kind: BlockKind::Loop,
+                label,
+                header,
+                body,
+                footer,
+            } => {
                 let new_body = rewrite(body, changed);
                 if !has_control_at_depth0(&new_body, 0) {
-                    let indent = header.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                    let indent = header
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
                     out.push(Node::Block {
                         kind: BlockKind::Other,
                         label,
@@ -54,11 +63,29 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
                     *changed = true;
                     continue;
                 }
-                out.push(Node::Block { kind: BlockKind::Loop, label, header, body: new_body, footer });
+                out.push(Node::Block {
+                    kind: BlockKind::Loop,
+                    label,
+                    header,
+                    body: new_body,
+                    footer,
+                });
             }
-            Node::Block { kind, label, header, body, footer } => {
+            Node::Block {
+                kind,
+                label,
+                header,
+                body,
+                footer,
+            } => {
                 let new_body = rewrite(body, changed);
-                out.push(Node::Block { kind, label, header, body: new_body, footer });
+                out.push(Node::Block {
+                    kind,
+                    label,
+                    header,
+                    body: new_body,
+                    footer,
+                });
             }
             Node::Line(line) => out.push(Node::Line(line)),
         }
@@ -71,12 +98,21 @@ fn has_control_at_depth0(nodes: &[Node], loop_depth: usize) -> bool {
         match node {
             Node::Line(line) => {
                 let t = line.trim();
-                if loop_depth == 0 && (t == "break;" || t == "continue;" || t.starts_with("break '") || t.starts_with("continue '")) {
+                if loop_depth == 0
+                    && (t == "break;"
+                        || t == "continue;"
+                        || t.starts_with("break '")
+                        || t.starts_with("continue '"))
+                {
                     return true;
                 }
             }
             Node::Block { kind, body, .. } => {
-                let next_depth = if *kind == BlockKind::Loop { loop_depth + 1 } else { loop_depth };
+                let next_depth = if *kind == BlockKind::Loop {
+                    loop_depth + 1
+                } else {
+                    loop_depth
+                };
                 if has_control_at_depth0(body, next_depth) {
                     return true;
                 }

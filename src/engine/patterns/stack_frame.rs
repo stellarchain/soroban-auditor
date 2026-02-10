@@ -121,7 +121,10 @@ fn extract_var_name_from_let(line: &str) -> Option<String> {
     // Extract var name from: let mut? varN = ...
     let after_let = line.strip_prefix("let ")?.trim_start();
     // Optional mut keyword
-    let after_let = after_let.strip_prefix("mut ").unwrap_or(after_let).trim_start();
+    let after_let = after_let
+        .strip_prefix("mut ")
+        .unwrap_or(after_let)
+        .trim_start();
 
     let name: String = after_let
         .chars()

@@ -61,7 +61,10 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
                 let mut new_body = rewrite(body, changed);
                 if !has_nested_loop(&new_body) {
                     rewrite_label_controls(&mut new_body, &label, changed);
-                    let indent = header.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                    let indent = header
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
                     let new_header = format!("{indent}loop {{");
                     out.push(Node::Block {
                         kind: BlockKind::Loop,
@@ -125,11 +128,17 @@ fn rewrite_label_controls(body: &mut [Node], label: &str, changed: &mut bool) {
                 let break_label = format!("break '{};", label);
                 let continue_label = format!("continue '{};", label);
                 if t == break_label {
-                    let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                    let indent = line
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
                     *line = format!("{indent}break;");
                     *changed = true;
                 } else if t == continue_label {
-                    let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                    let indent = line
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
                     *line = format!("{indent}continue;");
                     *changed = true;
                 }

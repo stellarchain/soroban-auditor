@@ -1,13 +1,19 @@
-use crate::reorder_analysis::can_local_be_reordered;
-use crate::wasm_ir::{call_indirect_name, mangle_fn_name, to_rs_type, BlockKind, Function, Global, Indentation};
+use crate::engine::forwarder_analyzer::ForwarderType;
+use crate::engine::sdk_call_mapper::SdkCallMapper;
+use crate::forwarder::map_forwarder_args;
 use crate::precedence;
+use crate::reorder_analysis::can_local_be_reordered;
+use crate::wasm_ir::{
+    call_indirect_name, mangle_fn_name, to_rs_type, BlockKind, Function, Global, Indentation,
+};
 use crate::{expr_builder::ExprBuilder, soroban::contract::FunctionContractSpec};
 use parity_wasm::elements::{BlockType, Instruction, Type, TypeSection};
 use regex::Regex;
-use soroban_sdk::Val;
 use soroban_sdk::IntoVal;
+use soroban_sdk::Val;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::io::Write;
 
 const DAY_IN_LEDGERS: u32 = 17280;
@@ -16,7 +22,12 @@ const INSTANCE_LIFETIME_THRESHOLD: u32 = INSTANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
 const BALANCE_BUMP_AMOUNT: u32 = 30 * DAY_IN_LEDGERS;
 const BALANCE_LIFETIME_THRESHOLD: u32 = BALANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
 
-fn storage_match_expr(storage_type: &str, persistent_expr: &str, temporary_expr: &str, instance_expr: &str) -> String {
+fn storage_match_expr(
+    storage_type: &str,
+    persistent_expr: &str,
+    temporary_expr: &str,
+    instance_expr: &str,
+) -> String {
     format!(
         "match {} {{ 0 => {{ {} }}, 1 => {{ {} }}, _ => {{ {} }} }}",
         storage_type, persistent_expr, temporary_expr, instance_expr
@@ -33,6 +44,53 @@ fn parse_u32_literal(s: &str) -> Option<u32> {
     } else {
         None
     }
+}
+
+fn parse_u64_literal(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    if s.chars().all(|c| c.is_ascii_digit()) {
+        s.parse::<u64>().ok()
+    } else {
+        None
+    }
+}
+
+fn parse_u32_from_expr_token(expr: &str) -> Option<u32> {
+    let mut token = expr.trim();
+    token = token.trim_matches(|c| c == '(' || c == ')');
+    if let Some((left, _)) = token.split_once(" as ") {
+        token = left.trim();
+    }
+    parse_u32_literal(token)
+}
+
+fn decode_packed_linear_u32(s: &str) -> Option<u32> {
+    if let Some(v) = parse_u32_literal(s) {
+        return Some(v);
+    }
+    let trimmed = s.trim();
+    if let Some((left, _)) = trimmed.split_once(".wrapping_shl(32 as u32)") {
+        if let Some(v) = parse_u32_from_expr_token(left) {
+            return Some(v);
+        }
+    }
+    let packed = parse_u64_literal(s)?;
+    let hi = (packed >> 32) as u32;
+    let lo = packed as u32;
+    if hi != 0 {
+        Some(hi)
+    } else {
+        Some(lo)
+    }
+}
+
+fn decode_linear_memory_addr_len(addr_expr: &str, len_expr: &str) -> Option<(u32, u32)> {
+    let addr = decode_packed_linear_u32(addr_expr)?;
+    let len = decode_packed_linear_u32(len_expr)?;
+    Some((addr, len))
 }
 
 fn resolve_linear_memory_bytes(
@@ -75,7 +133,11 @@ fn resolve_linear_memory_string(
 ) -> Option<String> {
     let bytes = resolve_linear_memory_bytes(addr, len, data_segments)?;
     let s = String::from_utf8(bytes).ok()?;
-    Some(s.replace('\n', "\\n").replace('\r', "\\r").replace('\"', "\\\""))
+    Some(
+        s.replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\"', "\\\""),
+    )
 }
 
 fn format_bytes_literal(bytes: &[u8]) -> String {
@@ -235,13 +297,15 @@ fn map_imported_call(
         "vec_new_from_linear_memory" => {
             let addr = args.get(0)?;
             let len = args.get(1)?;
-            if let (Some(addr), Some(len)) = (parse_u32_literal(addr), parse_u32_literal(len)) {
+            if let Some((addr, len)) = decode_linear_memory_addr_len(addr, len) {
                 if let Some(vals) = resolve_linear_memory_u64_array(addr, len, data_segments) {
                     return Some(format_val_vec_literal(&vals));
                 }
             }
-            Some("val_to_i64(Vec::<Val>::new(env).into_val(env)) /* TODO: linear memory */"
-                .to_string())
+            Some(
+                "val_to_i64(Vec::<Val>::new(env).into_val(env)) /* TODO: linear memory */"
+                    .to_string(),
+            )
         }
         "vec_unpack_to_linear_memory" => {
             Some("0 /* TODO: vec_unpack_to_linear_memory */".to_string())
@@ -322,9 +386,9 @@ fn map_imported_call(
             let vals_addr = args.get(1)?;
             let len = args.get(2)?;
             if let (Some(keys_addr), Some(vals_addr), Some(len)) = (
-                parse_u32_literal(keys_addr),
-                parse_u32_literal(vals_addr),
-                parse_u32_literal(len),
+                decode_packed_linear_u32(keys_addr),
+                decode_packed_linear_u32(vals_addr),
+                decode_packed_linear_u32(len),
             ) {
                 if let (Some(keys), Some(vals)) = (
                     resolve_linear_memory_u64_array(keys_addr, len, data_segments),
@@ -341,8 +405,10 @@ fn map_imported_call(
                     return Some(out);
                 }
             }
-            Some("val_to_i64(Map::<Val, Val>::new(env).into_val(env)) /* TODO: linear memory */"
-                .to_string())
+            Some(
+                "val_to_i64(Map::<Val, Val>::new(env).into_val(env)) /* TODO: linear memory */"
+                    .to_string(),
+            )
         }
         "map_unpack_to_linear_memory" => {
             Some("0 /* TODO: map_unpack_to_linear_memory */".to_string())
@@ -362,7 +428,7 @@ fn map_imported_call(
         "symbol_new_from_linear_memory" => {
             let addr = args.get(0)?;
             let len = args.get(1)?;
-            if let (Some(addr), Some(len)) = (parse_u32_literal(addr), parse_u32_literal(len)) {
+            if let Some((addr, len)) = decode_linear_memory_addr_len(addr, len) {
                 if let Some(s) = resolve_linear_memory_string(addr, len, data_segments) {
                     return Some(format!("val_to_i64(Symbol::new(env, \"{}\"))", s));
                 }
@@ -376,12 +442,16 @@ fn map_imported_call(
                 sym
             ))
         }
-        "symbol_copy_to_linear_memory" => Some("0 /* TODO: symbol_copy_to_linear_memory */".to_string()),
-        "symbol_index_in_linear_memory" => Some("0 /* TODO: symbol_index_in_linear_memory */".to_string()),
+        "symbol_copy_to_linear_memory" => {
+            Some("0 /* TODO: symbol_copy_to_linear_memory */".to_string())
+        }
+        "symbol_index_in_linear_memory" => {
+            Some("0 /* TODO: symbol_index_in_linear_memory */".to_string())
+        }
         "string_new_from_linear_memory" => {
             let addr = args.get(0)?;
             let len = args.get(1)?;
-            if let (Some(addr), Some(len)) = (parse_u32_literal(addr), parse_u32_literal(len)) {
+            if let Some((addr, len)) = decode_linear_memory_addr_len(addr, len) {
                 if let Some(s) = resolve_linear_memory_string(addr, len, data_segments) {
                     return Some(format!("val_to_i64(String::from_str(env, \"{}\"))", s));
                 }
@@ -415,7 +485,7 @@ fn map_imported_call(
         "bytes_new_from_linear_memory" => {
             let addr = args.get(0)?;
             let len = args.get(1)?;
-            if let (Some(addr), Some(len)) = (parse_u32_literal(addr), parse_u32_literal(len)) {
+            if let Some((addr, len)) = decode_linear_memory_addr_len(addr, len) {
                 if let Some(bytes) = resolve_linear_memory_bytes(addr, len, data_segments) {
                     let literal = format_bytes_literal(&bytes);
                     return Some(format!(
@@ -550,7 +620,12 @@ fn map_imported_call(
                     "env.storage().instance().set(&val_from_i64({}), &val_from_i64({})); 0",
                     key, val
                 );
-                Some(storage_match_expr(storage_type, &persistent, &temporary, &instance))
+                Some(storage_match_expr(
+                    storage_type,
+                    &persistent,
+                    &temporary,
+                    &instance,
+                ))
             } else {
                 Some(format!(
                     "{{ env.storage().instance().set(&val_from_i64({}), &val_from_i64({})); 0 }}",
@@ -573,7 +648,12 @@ fn map_imported_call(
                     "val_to_i64(env.storage().instance().get::<_, Val>(&val_from_i64({})).unwrap_or(val_from_i64(0)))",
                     key
                 );
-                Some(storage_match_expr(storage_type, &persistent, &temporary, &instance))
+                Some(storage_match_expr(
+                    storage_type,
+                    &persistent,
+                    &temporary,
+                    &instance,
+                ))
             } else {
                 Some(format!(
                     "val_to_i64(env.storage().instance().get::<_, Val>(&val_from_i64({})).unwrap_or(val_from_i64(0)))",
@@ -596,7 +676,12 @@ fn map_imported_call(
                     "if env.storage().instance().has(&val_from_i64({})) {{ 1 }} else {{ 0 }}",
                     key
                 );
-                Some(storage_match_expr(storage_type, &persistent, &temporary, &instance))
+                Some(storage_match_expr(
+                    storage_type,
+                    &persistent,
+                    &temporary,
+                    &instance,
+                ))
             } else {
                 Some(format!(
                     "if env.storage().instance().has(&val_from_i64({})) {{ 1 }} else {{ 0 }}",
@@ -615,11 +700,14 @@ fn map_imported_call(
                     "env.storage().temporary().remove(&val_from_i64({})); 0",
                     key
                 );
-                let instance = format!(
-                    "env.storage().instance().remove(&val_from_i64({})); 0",
-                    key
-                );
-                Some(storage_match_expr(storage_type, &persistent, &temporary, &instance))
+                let instance =
+                    format!("env.storage().instance().remove(&val_from_i64({})); 0", key);
+                Some(storage_match_expr(
+                    storage_type,
+                    &persistent,
+                    &temporary,
+                    &instance,
+                ))
             } else {
                 Some(format!(
                     "{{ env.storage().instance().remove(&val_from_i64({})); 0 }}",
@@ -644,7 +732,12 @@ fn map_imported_call(
                 "env.storage().instance().extend_ttl({} as u32, {} as u32); 0",
                 threshold, extend_to
             );
-            Some(storage_match_expr(storage_type, &persistent, &temporary, &instance))
+            Some(storage_match_expr(
+                storage_type,
+                &persistent,
+                &temporary,
+                &instance,
+            ))
         }
         "extend_current_contract_instance_and_code_ttl" => {
             let threshold = args.get(0)?;
@@ -689,9 +782,9 @@ fn map_imported_call(
                 addr, threshold, extend_to
             ))
         }
-        "get_current_contract_address" => Some(
-            "val_to_i64(env.current_contract_address().into_val(env))".to_string(),
-        ),
+        "get_current_contract_address" => {
+            Some("val_to_i64(env.current_contract_address().into_val(env))".to_string())
+        }
         "get_ledger_version" => Some("env.ledger().protocol_version() as i64".to_string()),
         "get_ledger_sequence" => Some("env.ledger().sequence() as i64".to_string()),
         "get_ledger_timestamp" => Some("env.ledger().timestamp() as i64".to_string()),
@@ -1190,27 +1283,7 @@ fn map_imported_call(
         "get_contract_data_live_until_ledger_v2" => {
             Some("0 /* TODO: get_contract_data_live_until_ledger_v2 */".to_string())
         }
-        "bls12_381_check_g1_is_in_subgroup"
-        | "bls12_381_check_g2_is_in_subgroup"
-        | "bls12_381_g1_add"
-        | "bls12_381_g1_mul"
-        | "bls12_381_g1_msm"
-        | "bls12_381_g1_is_on_curve"
-        | "bls12_381_g2_add"
-        | "bls12_381_g2_mul"
-        | "bls12_381_g2_msm"
-        | "bls12_381_g2_is_on_curve"
-        | "bls12_381_map_fp_to_g1"
-        | "bls12_381_map_fp2_to_g2"
-        | "bls12_381_hash_to_g1"
-        | "bls12_381_hash_to_g2"
-        | "bls12_381_multi_pairing_check"
-        | "bls12_381_fr_add"
-        | "bls12_381_fr_sub"
-        | "bls12_381_fr_mul"
-        | "bls12_381_fr_pow"
-        | "bls12_381_fr_inv"
-        | "bn254_g1_add"
+        "bn254_g1_add"
         | "bn254_g1_mul"
         | "bn254_g1_msm"
         | "bn254_g1_is_on_curve"
@@ -1222,7 +1295,65 @@ fn map_imported_call(
         | "bn254_fr_inv"
         | "poseidon_permutation"
         | "poseidon2_permutation" => Some(format!("0 /* TODO: {} */", name)),
-        _ => None,
+        _ => {
+            // Fallback: Try SdkCallMapper for data-driven mapping
+            let mapper = SdkCallMapper::default();
+            mapper.map_call(name, args)
+        }
+    }
+}
+
+fn resolve_forwarder_chain(
+    mut fn_index: u32,
+    args: &[String],
+    call_forwarders: &std::collections::BTreeMap<u32, crate::forwarder::CallForwarder>,
+    complex_forwarders: &std::collections::HashMap<
+        u32,
+        crate::engine::forwarder_analyzer::ForwarderInfo,
+    >,
+    import_count: usize,
+    functions: &[Function],
+    data_segments: &[crate::decompile::DataSegment],
+) -> Option<String> {
+    let mut current_args: Vec<String> = args.to_vec();
+    let mut visited = HashSet::new();
+    let mut depth = 0usize;
+
+    loop {
+        if (fn_index as usize) < import_count {
+            let name = &functions[fn_index as usize].name;
+            return Some(
+                map_imported_call(name, &current_args, data_segments)
+                    .unwrap_or_else(|| format!("/* TODO: host call {} */ 0", name)),
+            );
+        }
+
+        if depth > 12 || !visited.insert(fn_index) {
+            return None;
+        }
+
+        if let Some(forwarder) = call_forwarders.get(&fn_index) {
+            if let Some(next_args) = map_forwarder_args(&forwarder.args, &current_args) {
+                current_args = next_args;
+                fn_index = forwarder.target;
+                depth += 1;
+                continue;
+            }
+            return None;
+        }
+
+        if let Some(info) = complex_forwarders.get(&fn_index) {
+            if matches!(info.forwarder_type, ForwarderType::DirectForwarder) {
+                if let Some(next_args) = map_forwarder_args(&info.args, &current_args) {
+                    current_args = next_args;
+                    fn_index = info.target_function;
+                    depth += 1;
+                    continue;
+                }
+            }
+        }
+
+        return None;
     }
 }
 
@@ -1279,14 +1410,26 @@ fn try_format_tag_compare(a: &str, b: &str, equal: bool) -> Option<String> {
         return None;
     };
     let check = match ty.as_str() {
-        "Address" => format!("Address::try_from_val(env, &val_from_i64({})).is_ok()", base),
-        "Vec" => format!("Vec::<Val>::try_from_val(env, &val_from_i64({})).is_ok()", base),
-        "Map" => format!("Map::<Val, Val>::try_from_val(env, &val_from_i64({})).is_ok()", base),
+        "Address" => format!(
+            "Address::try_from_val(env, &val_from_i64({})).is_ok()",
+            base
+        ),
+        "Vec" => format!(
+            "Vec::<Val>::try_from_val(env, &val_from_i64({})).is_ok()",
+            base
+        ),
+        "Map" => format!(
+            "Map::<Val, Val>::try_from_val(env, &val_from_i64({})).is_ok()",
+            base
+        ),
         "Bytes" => format!("Bytes::try_from_val(env, &val_from_i64({})).is_ok()", base),
         "String" => format!("String::try_from_val(env, &val_from_i64({})).is_ok()", base),
         "Symbol" => format!("Symbol::try_from_val(env, &val_from_i64({})).is_ok()", base),
         "MuxedAddress" => {
-            format!("MuxedAddress::try_from_val(env, &val_from_i64({})).is_ok()", base)
+            format!(
+                "MuxedAddress::try_from_val(env, &val_from_i64({})).is_ok()",
+                base
+            )
         }
         _ => return None,
     };
@@ -1491,7 +1634,11 @@ pub fn build<W: Write>(
     spec_by_fn_index: &HashMap<u32, FunctionContractSpec>,
     func_index: usize,
     data_segments: &[crate::decompile::DataSegment],
-    internal_call_forwarders: &std::collections::BTreeMap<u32, crate::app::utils::InternalForwarder>,
+    call_forwarders: &std::collections::BTreeMap<u32, crate::forwarder::CallForwarder>,
+    complex_forwarders: &std::collections::HashMap<
+        u32,
+        crate::engine::forwarder_analyzer::ForwarderInfo,
+    >,
 ) {
     let label_needed = compute_label_needed(code);
     let mut expr_builder = ExprBuilder::new();
@@ -1577,7 +1724,10 @@ pub fn build<W: Write>(
                     loop_count += 1;
                 } else {
                     writeln!(writer, "{}{{", indentation).unwrap();
-                    blocks.push(BlockKind::Block { label: None, dst_var });
+                    blocks.push(BlockKind::Block {
+                        label: None,
+                        dst_var,
+                    });
                 }
                 indentation.0 += 1;
             }
@@ -1608,7 +1758,10 @@ pub fn build<W: Write>(
                     loop_count += 1;
                 } else {
                     writeln!(writer, "{}loop {{", indentation).unwrap();
-                    blocks.push(BlockKind::Loop { label: None, dst_var });
+                    blocks.push(BlockKind::Loop {
+                        label: None,
+                        dst_var,
+                    });
                 }
                 indentation.0 += 1;
             }
@@ -1844,16 +1997,10 @@ pub fn build<W: Write>(
                 writeln!(writer, "{}match {} {{", indentation, expr).unwrap();
                 indentation.0 += 1;
                 for (index, &relative_depth) in table.table.iter().enumerate() {
-                    let target_block = blocks
-                        .iter()
-                        .rev()
-                        .nth(relative_depth as usize);
+                    let target_block = blocks.iter().rev().nth(relative_depth as usize);
                     emit_br_table_arm(writer, &indentation, index, target_block);
                 }
-                let default_block = blocks
-                    .iter()
-                    .rev()
-                    .nth(table.default as usize);
+                let default_block = blocks.iter().rev().nth(table.default as usize);
                 emit_br_table_default(writer, &indentation, default_block);
                 indentation.0 -= 1;
                 writeln!(writer, "{}}}", indentation).unwrap();
@@ -1903,40 +2050,45 @@ pub fn build<W: Write>(
                             writeln!(writer, ";").unwrap();
                         }
                     }
-                } else if let Some(forwarder) = internal_call_forwarders.get(&fn_index) {
-                    let mut fwd_args = Vec::with_capacity(forwarder.args.len());
-                    let mut ok = true;
-                    for spec in &forwarder.args {
-                        match spec {
-                            crate::app::utils::ForwardArg::Local(idx) => {
-                                if let Some(arg) = args.get(*idx) {
-                                    fwd_args.push(arg.clone());
-                                } else {
-                                    ok = false;
-                                    break;
+                } else if let Some(inlined) = resolve_forwarder_chain(
+                    fn_index,
+                    &args,
+                    call_forwarders,
+                    complex_forwarders,
+                    import_count,
+                    functions,
+                    data_segments,
+                ) {
+                    write!(writer, "{}", inlined).unwrap();
+                    writeln!(writer, ";").unwrap();
+                } else if let Some(info) = complex_forwarders.get(&fn_index) {
+                    match info.forwarder_type {
+                        ForwarderType::DirectForwarder => {
+                            let target = info.target_function;
+                            if (target as usize) < import_count {
+                                let target_name = &functions[target as usize].name;
+                                let mapped = map_imported_call(target_name, &args, data_segments)
+                                    .unwrap_or_else(|| {
+                                        format!("/* TODO: host call {} */ 0", target_name)
+                                    });
+                                write!(writer, "{}", mapped).unwrap();
+                                writeln!(writer, ";").unwrap();
+                            } else {
+                                let target_name = &functions[target as usize].name;
+                                write!(writer, "self.{}(env", target_name).unwrap();
+                                for expr in &args {
+                                    write!(writer, ", {}", expr).unwrap();
                                 }
+                                writeln!(writer, ");").unwrap();
                             }
-                            crate::app::utils::ForwardArg::PackedU32(idx) => {
-                                if let Some(arg) = args.get(*idx) {
-                                    fwd_args.push(arg.clone());
-                                } else {
-                                    ok = false;
-                                    break;
-                                }
-                            }
-                            crate::app::utils::ForwardArg::I32(v) => fwd_args.push(v.to_string()),
-                            crate::app::utils::ForwardArg::I64(v) => fwd_args.push(v.to_string()),
                         }
-                    }
-                    if !ok || fwd_args.len() != forwarder.args.len() {
-                        write!(writer, "/* TODO: internal forward {} */ 0;", forwarder.name).unwrap();
-                        writeln!(writer).unwrap();
-                    } else if let Some(mapped) = map_imported_call(&forwarder.name, &fwd_args, data_segments) {
-                        write!(writer, "{}", mapped).unwrap();
-                        writeln!(writer, ";").unwrap();
-                    } else {
-                        write!(writer, "/* TODO: internal forward {} */ 0;", forwarder.name).unwrap();
-                        writeln!(writer).unwrap();
+                        _ => {
+                            write!(writer, "self.{}(env", name).unwrap();
+                            for expr in &args {
+                                write!(writer, ", {}", expr).unwrap();
+                            }
+                            writeln!(writer, ");").unwrap();
+                        }
                     }
                 } else {
                     write!(writer, "self.{}(env", name).unwrap();
@@ -2082,28 +2234,32 @@ pub fn build<W: Write>(
                         // Avoid slot lifting when base is passed to a call.
                         used_slot = false;
                     } else {
-                    let off = extra.saturating_add(offset as i32);
-                    if let Some(name) = stack_slots_i32.get(&(base.clone(), off)) {
-                        expr_builder.push((precedence::PATH, name.clone()));
-                        used_slot = true;
-                    } else if let Some(name) = stack_slots_i64.get(&(base.clone(), off)) {
-                        expr_builder.push((precedence::PATH, name.clone()));
-                        used_slot = true;
-                    } else {
-                        let name = slot_name(&base, off, "i32");
-                        stack_slots_i32.insert((base.clone(), off), name.clone());
-                        writeln!(
-                            writer,
-                            "{}let mut {} = self.memory.load32({} as usize{}) as i32;",
-                            indentation,
-                            name,
-                            addr_str,
-                            if offset != 0 { format!(" + {}", offset) } else { String::new() }
-                        )
-                        .unwrap();
-                        expr_builder.push((precedence::PATH, name));
-                        used_slot = true;
-                    }
+                        let off = extra.saturating_add(offset as i32);
+                        if let Some(name) = stack_slots_i32.get(&(base.clone(), off)) {
+                            expr_builder.push((precedence::PATH, name.clone()));
+                            used_slot = true;
+                        } else if let Some(name) = stack_slots_i64.get(&(base.clone(), off)) {
+                            expr_builder.push((precedence::PATH, name.clone()));
+                            used_slot = true;
+                        } else {
+                            let name = slot_name(&base, off, "i32");
+                            stack_slots_i32.insert((base.clone(), off), name.clone());
+                            writeln!(
+                                writer,
+                                "{}let mut {} = self.memory.load32({} as usize{}) as i32;",
+                                indentation,
+                                name,
+                                addr_str,
+                                if offset != 0 {
+                                    format!(" + {}", offset)
+                                } else {
+                                    String::new()
+                                }
+                            )
+                            .unwrap();
+                            expr_builder.push((precedence::PATH, name));
+                            used_slot = true;
+                        }
                     }
                 }
                 if !used_slot {
@@ -2132,28 +2288,32 @@ pub fn build<W: Write>(
                     if tainted_bases.contains(&base) && !allow_tainted_slot_lift {
                         used_slot = false;
                     } else {
-                    let off = extra.saturating_add(offset as i32);
-                    if let Some(name) = stack_slots_i64.get(&(base.clone(), off)) {
-                        expr_builder.push((precedence::PATH, name.clone()));
-                        used_slot = true;
-                    } else if let Some(name) = stack_slots_i32.get(&(base.clone(), off)) {
-                        expr_builder.push((precedence::PATH, name.clone()));
-                        used_slot = true;
-                    } else {
-                        let name = slot_name(&base, off, "i64");
-                        stack_slots_i64.insert((base.clone(), off), name.clone());
-                        writeln!(
-                            writer,
-                            "{}let mut {} = self.memory.load64({} as usize{}) as i64;",
-                            indentation,
-                            name,
-                            addr_str,
-                            if offset != 0 { format!(" + {}", offset) } else { String::new() }
-                        )
-                        .unwrap();
-                        expr_builder.push((precedence::PATH, name));
-                        used_slot = true;
-                    }
+                        let off = extra.saturating_add(offset as i32);
+                        if let Some(name) = stack_slots_i64.get(&(base.clone(), off)) {
+                            expr_builder.push((precedence::PATH, name.clone()));
+                            used_slot = true;
+                        } else if let Some(name) = stack_slots_i32.get(&(base.clone(), off)) {
+                            expr_builder.push((precedence::PATH, name.clone()));
+                            used_slot = true;
+                        } else {
+                            let name = slot_name(&base, off, "i64");
+                            stack_slots_i64.insert((base.clone(), off), name.clone());
+                            writeln!(
+                                writer,
+                                "{}let mut {} = self.memory.load64({} as usize{}) as i64;",
+                                indentation,
+                                name,
+                                addr_str,
+                                if offset != 0 {
+                                    format!(" + {}", offset)
+                                } else {
+                                    String::new()
+                                }
+                            )
+                            .unwrap();
+                            expr_builder.push((precedence::PATH, name));
+                            used_slot = true;
+                        }
                     }
                 }
                 if !used_slot {
@@ -2399,21 +2559,27 @@ pub fn build<W: Write>(
                     if tainted_bases.contains(&base) && !allow_tainted_slot_lift {
                         used_slot = false;
                     } else {
-                    use std::collections::hash_map::Entry;
-                    let off = extra.saturating_add(offset as i32);
-                    let key = (base.clone(), off);
-                    match stack_slots_i32.entry(key) {
-                        Entry::Occupied(entry) => {
-                            let name = entry.get().clone();
-                            writeln!(writer, "{}{} = {} as i32;", indentation, name, value).unwrap();
+                        use std::collections::hash_map::Entry;
+                        let off = extra.saturating_add(offset as i32);
+                        let key = (base.clone(), off);
+                        match stack_slots_i32.entry(key) {
+                            Entry::Occupied(entry) => {
+                                let name = entry.get().clone();
+                                writeln!(writer, "{}{} = {} as i32;", indentation, name, value)
+                                    .unwrap();
+                            }
+                            Entry::Vacant(entry) => {
+                                let name = slot_name(&base, off, "i32");
+                                entry.insert(name.clone());
+                                writeln!(
+                                    writer,
+                                    "{}let mut {} = {} as i32;",
+                                    indentation, name, value
+                                )
+                                .unwrap();
+                            }
                         }
-                        Entry::Vacant(entry) => {
-                            let name = slot_name(&base, off, "i32");
-                            entry.insert(name.clone());
-                            writeln!(writer, "{}let mut {} = {} as i32;", indentation, name, value).unwrap();
-                        }
-                    }
-                    used_slot = true;
+                        used_slot = true;
                     }
                 }
                 if !used_slot {
@@ -2441,21 +2607,27 @@ pub fn build<W: Write>(
                     if tainted_bases.contains(&base) && !allow_tainted_slot_lift {
                         used_slot = false;
                     } else {
-                    use std::collections::hash_map::Entry;
-                    let off = extra.saturating_add(offset as i32);
-                    let key = (base.clone(), off);
-                    match stack_slots_i64.entry(key) {
-                        Entry::Occupied(entry) => {
-                            let name = entry.get().clone();
-                            writeln!(writer, "{}{} = {} as i64;", indentation, name, value).unwrap();
+                        use std::collections::hash_map::Entry;
+                        let off = extra.saturating_add(offset as i32);
+                        let key = (base.clone(), off);
+                        match stack_slots_i64.entry(key) {
+                            Entry::Occupied(entry) => {
+                                let name = entry.get().clone();
+                                writeln!(writer, "{}{} = {} as i64;", indentation, name, value)
+                                    .unwrap();
+                            }
+                            Entry::Vacant(entry) => {
+                                let name = slot_name(&base, off, "i64");
+                                entry.insert(name.clone());
+                                writeln!(
+                                    writer,
+                                    "{}let mut {} = {} as i64;",
+                                    indentation, name, value
+                                )
+                                .unwrap();
+                            }
                         }
-                        Entry::Vacant(entry) => {
-                            let name = slot_name(&base, off, "i64");
-                            entry.insert(name.clone());
-                            writeln!(writer, "{}let mut {} = {} as i64;", indentation, name, value).unwrap();
-                        }
-                    }
-                    used_slot = true;
+                        used_slot = true;
                     }
                 }
                 if !used_slot {
@@ -2651,7 +2823,9 @@ pub fn build<W: Write>(
                     precedence::COMPARISON,
                     precedence::AS,
                     |a, b| {
-                        if let Some(mapped) = try_format_tag_compare(&a.to_string(), &b.to_string(), true) {
+                        if let Some(mapped) =
+                            try_format_tag_compare(&a.to_string(), &b.to_string(), true)
+                        {
                             format!("({}) as i32", mapped)
                         } else {
                             format!("({} == {}) as i32", a, b)
@@ -2665,7 +2839,9 @@ pub fn build<W: Write>(
                     precedence::COMPARISON,
                     precedence::AS,
                     |a, b| {
-                        if let Some(mapped) = try_format_tag_compare(&a.to_string(), &b.to_string(), false) {
+                        if let Some(mapped) =
+                            try_format_tag_compare(&a.to_string(), &b.to_string(), false)
+                        {
                             format!("({}) as i32", mapped)
                         } else {
                             format!("({} != {}) as i32", a, b)
@@ -2736,7 +2912,9 @@ pub fn build<W: Write>(
                     precedence::COMPARISON,
                     precedence::AS,
                     |a, b| {
-                        if let Some(mapped) = try_format_tag_compare(&a.to_string(), &b.to_string(), true) {
+                        if let Some(mapped) =
+                            try_format_tag_compare(&a.to_string(), &b.to_string(), true)
+                        {
                             format!("({}) as i32", mapped)
                         } else {
                             format!("({} == {}) as i32", a, b)
@@ -2750,7 +2928,9 @@ pub fn build<W: Write>(
                     precedence::COMPARISON,
                     precedence::AS,
                     |a, b| {
-                        if let Some(mapped) = try_format_tag_compare(&a.to_string(), &b.to_string(), false) {
+                        if let Some(mapped) =
+                            try_format_tag_compare(&a.to_string(), &b.to_string(), false)
+                        {
                             format!("({}) as i32", mapped)
                         } else {
                             format!("({} != {}) as i32", a, b)

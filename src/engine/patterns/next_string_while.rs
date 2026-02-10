@@ -159,7 +159,9 @@ impl Pattern for NextStringWhile {
                     for setup_line in &setup_lines {
                         new_body.push(format!("{cond_indent}{}", setup_line.trim()));
                     }
-                    new_body.push(format!("{cond_indent}let ({tmp_a}, {tmp_b}, {tmp_ok}) = {call};"));
+                    new_body.push(format!(
+                        "{cond_indent}let ({tmp_a}, {tmp_b}, {tmp_ok}) = {call};"
+                    ));
                     new_body.push(format!("{cond_indent}{} = {tmp_a};", vars[0]));
                     new_body.push(format!("{cond_indent}{} = {tmp_b};", vars[1]));
                     new_body.push(format!("{cond_indent}{} = {tmp_ok};", vars[2]));
@@ -257,7 +259,9 @@ fn next_non_empty(lines: &[String], mut idx: usize) -> Option<usize> {
 }
 
 fn indentation_of(line: &str) -> String {
-    line.chars().take_while(|c| c.is_whitespace()).collect::<String>()
+    line.chars()
+        .take_while(|c| c.is_whitespace())
+        .collect::<String>()
 }
 
 fn parse_loop_label(line: &str) -> Option<String> {

@@ -25,7 +25,10 @@ impl SmartVariableNamingPattern {
 
         let after_let = trimmed.strip_prefix("let ")?.trim_start();
         // Handle optional "mut"
-        let after_mut = after_let.strip_prefix("mut ").unwrap_or(after_let).trim_start();
+        let after_mut = after_let
+            .strip_prefix("mut ")
+            .unwrap_or(after_let)
+            .trim_start();
 
         // Extract variable name (până la : sau =)
         let var_name = if let Some(colon_pos) = after_mut.find(':') {
@@ -40,7 +43,11 @@ impl SmartVariableNamingPattern {
     }
 
     /// Analizează contextul și determină un nume mai bun pentru variabilă
-    fn suggest_better_name(var_name: &str, declaration_line: &str, usage_context: &[String]) -> Option<String> {
+    fn suggest_better_name(
+        var_name: &str,
+        declaration_line: &str,
+        usage_context: &[String],
+    ) -> Option<String> {
         // Skip if already well-named
         if !var_name.starts_with("var") && !var_name.starts_with("slot_var") {
             return None;
@@ -63,32 +70,35 @@ impl SmartVariableNamingPattern {
     fn analyze_declaration(line: &str) -> Option<String> {
         let line_lower = line.to_lowercase();
 
-        // Vec::new() → temp_vec or result_vec
-        if line.contains("Vec::new(") {
+        // Vec::new() or Vec::<T>::new() → result_vec
+        if line.contains("::new(") && (line.contains("Vec::") || line.contains("vec::")) {
             return Some("result_vec".to_string());
         }
 
-        // .len() → count or length
+        // .len() → count or length (more specific patterns)
         if line.contains(".len()") {
             if line_lower.contains("feed") {
                 return Some("feed_count".to_string());
             }
-            return Some("item_count".to_string());
+            if line.contains("Vec::<") || line.contains("vec::<") {
+                return Some("item_count".to_string());
+            }
+            return Some("count_val".to_string());
         }
 
         // String operations
-        if line.contains("String::from_val") {
+        if line.contains("String::from_val") || line.contains("string::from_val") {
             return Some("string_val".to_string());
         }
 
         // Address operations
         if line.contains("Address::from_val") || line.contains("address_from_i64") {
-            if line_lower.contains("from") {
+            if line_lower.contains("from") && !line_lower.contains("from_val") {
                 return Some("from_addr".to_string());
             } else if line_lower.contains("to") {
                 return Some("to_addr".to_string());
             }
-            return Some("address".to_string());
+            return Some("addr_val".to_string());
         }
 
         // Error values
@@ -98,7 +108,7 @@ impl SmartVariableNamingPattern {
 
         // mload operations with specific patterns
         if line.contains("mload64!") {
-            if line.contains("+ 72") || line.contains("+ 80") {
+            if line.contains("+ 72") || line.contains("+ 80") || line.contains("+ 56") {
                 return Some("loaded_val".to_string());
             }
         }
@@ -150,20 +160,41 @@ impl SmartVariableNamingPattern {
     }
 
     /// Înlocuiește toate aparițiile unei variabile cu noul nume
+    /// Uses manual token-based replacement to avoid regex issues
     fn rename_variable(body: &[String], old_name: &str, new_name: &str) -> Vec<String> {
-        use regex::Regex;
-
-        // Create regex for whole word matching: \b{old_name}\b
-        let word_boundary = format!(r"\b{}\b", regex::escape(old_name));
-        let re = match Regex::new(&word_boundary) {
-            Ok(r) => r,
-            Err(_) => return body.to_vec(), // If regex fails, return unchanged
-        };
-
         body.iter()
             .map(|line| {
-                // Use regex to replace only whole words
-                re.replace_all(line, new_name).to_string()
+                let mut result = String::new();
+                let mut chars = line.chars().peekable();
+                let mut current_token = String::new();
+
+                while let Some(ch) = chars.next() {
+                    if ch.is_alphanumeric() || ch == '_' {
+                        current_token.push(ch);
+                    } else {
+                        // End of token - check if it matches
+                        if !current_token.is_empty() {
+                            if current_token == old_name {
+                                result.push_str(new_name);
+                            } else {
+                                result.push_str(&current_token);
+                            }
+                            current_token.clear();
+                        }
+                        result.push(ch);
+                    }
+                }
+
+                // Handle last token
+                if !current_token.is_empty() {
+                    if current_token == old_name {
+                        result.push_str(new_name);
+                    } else {
+                        result.push_str(&current_token);
+                    }
+                }
+
+                result
             })
             .collect()
     }
@@ -179,6 +210,13 @@ impl Pattern for SmartVariableNamingPattern {
             return None;
         }
 
+        // Check if already applied (prevent re-application in iterative mode)
+        for line in &block.body {
+            if line.contains("// Variables renamed by SmartVariableNamingPattern") {
+                return None; // Already applied
+            }
+        }
+
         let mut changed = false;
         let mut current_body = block.body.clone();
         let mut rename_map: HashMap<String, String> = HashMap::new();
@@ -189,22 +227,39 @@ impl Pattern for SmartVariableNamingPattern {
                 let usage_context = Self::collect_usage_context(&var_name, &block.body, idx);
 
                 if let Some(new_name) = Self::suggest_better_name(&var_name, line, &usage_context) {
-                    // Avoid conflicts
-                    if !rename_map.values().any(|v| v == &new_name) {
+                    // Avoid conflicts - check both keys and values
+                    if !rename_map.contains_key(&new_name)
+                        && !rename_map.values().any(|v| v == &new_name)
+                        && new_name != var_name
+                    {
                         rename_map.insert(var_name, new_name);
                     }
                 }
             }
         }
 
-        // Second pass: apply renames
-        for (old_name, new_name) in rename_map {
-            current_body = Self::rename_variable(&current_body, &old_name, &new_name);
+        if rename_map.is_empty() {
+            return None; // Nothing to rename
+        }
+
+        // Second pass: apply renames ONE AT A TIME to avoid conflicts
+        for (old_name, new_name) in &rename_map {
+            current_body = Self::rename_variable(&current_body, old_name, new_name);
             changed = true;
         }
 
         if !changed {
             return None;
+        }
+
+        // Add marker comment at the start to prevent re-application
+        if !current_body.is_empty() {
+            let first_line_indent = current_body[0].len() - current_body[0].trim_start().len();
+            let marker = format!(
+                "{}// Variables renamed by SmartVariableNamingPattern",
+                " ".repeat(first_line_indent)
+            );
+            current_body.insert(0, marker);
         }
 
         Some(FunctionBlock {
@@ -264,6 +319,9 @@ mod tests {
 
         // Should rename var9 to something better
         assert!(!result.body.iter().any(|l| l.contains("var9")));
-        assert!(result.body.iter().any(|l| l.contains("result_vec") || l.contains("vec_builder")));
+        assert!(result
+            .body
+            .iter()
+            .any(|l| l.contains("result_vec") || l.contains("vec_builder")));
     }
 }

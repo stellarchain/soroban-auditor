@@ -5,17 +5,16 @@ use structopt::StructOpt;
 
 mod app;
 mod code_builder;
-mod expr_builder;
 mod decompile;
 mod engine;
+mod expr_builder;
 mod fingerprint;
 mod format;
-mod patterns;
-mod postprocess;
-mod sdk;
+mod forwarder;
 mod precedence;
 mod reorder_analysis;
 mod rewrites;
+mod sdk;
 mod soroban;
 mod wasm_ir;
 

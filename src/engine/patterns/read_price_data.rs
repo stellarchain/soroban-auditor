@@ -50,7 +50,11 @@ impl Pattern for ReadPriceDataPattern {
                     }
                 }
             }
-            if err_var.is_none() && l.contains("let mut ") && l.contains(": i64") && l.contains("err") {
+            if err_var.is_none()
+                && l.contains("let mut ")
+                && l.contains(": i64")
+                && l.contains("err")
+            {
                 if let Some(pos) = l.find("let mut ") {
                     let rest = &l[pos + "let mut ".len()..];
                     if let Some(end) = rest.find(":") {
@@ -58,7 +62,11 @@ impl Pattern for ReadPriceDataPattern {
                     }
                 }
             }
-            if has_err_var.is_none() && l.contains("let mut ") && l.contains(": i32") && l.contains("has_err") {
+            if has_err_var.is_none()
+                && l.contains("let mut ")
+                && l.contains(": i32")
+                && l.contains("has_err")
+            {
                 if let Some(pos) = l.find("let mut ") {
                     let rest = &l[pos + "let mut ".len()..];
                     if let Some(end) = rest.find(":") {
@@ -101,7 +109,10 @@ impl Pattern for ReadPriceDataPattern {
             "{}        if {} != 0 {{ return; }}",
             inner, has_err_var
         ));
-        new_body.push(format!("{}        let feed = String::from_val(env, &val);", inner));
+        new_body.push(format!(
+            "{}        let feed = String::from_val(env, &val);",
+            inner
+        ));
         new_body.push(format!(
             "{}        match self.{}(env.clone(), feed) {{",
             inner, feed_fn_name
