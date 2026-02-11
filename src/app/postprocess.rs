@@ -43,6 +43,7 @@ pub fn run_all(output: String, contract_name: &str) -> String {
     let output = cleanup_noop_identifier_statements(output);
     let output = cleanup_break_after_unreachable(output);
     let output = cleanup_dead_type_tag_guards(output);
+    let output = cleanup_label_terminal_break_dead_tail(output);
     let output = cleanup_vec_builder_append(output);
     let output = cleanup_missing_loop_break_guard(output);
     let output = cleanup_noop_match_break_loops(output);
@@ -55,6 +56,11 @@ pub fn run_all(output: String, contract_name: &str) -> String {
     let output = add_blank_line_before_functions(output);
     let output = normalize_indentation(output);
     let output = postprocess_remove_unused_methods(output, contract_name);
+    let output = postprocess_strip_self_usage(output);
+    let output = fix_address_call_type_mismatches(output);
+    let output = cleanup_signature_empty_param_lines(output);
+    let output = cleanup_global0_boilerplate(output);
+    let output = cleanup_empty_impl_blocks(output);
     // Keep the rest of postprocess as opt-in cosmetic cleanup.
     // Default path preserves code_builder output as-is.
     let enable_postprocess = std::env::var("SOROBAN_AUDITOR_ENABLE_POSTPROCESS").is_ok();
@@ -62,6 +68,73 @@ pub fn run_all(output: String, contract_name: &str) -> String {
         return output;
     }
     safe_cleanup(output, contract_name)
+}
+
+fn cleanup_global0_boilerplate(output: String) -> String {
+    let re_sub = Regex::new(r"\(0 as i32\)\.wrapping_sub\(([-]?\d+)\)").ok();
+    let re_add = Regex::new(r"\(0 as i32\)\.wrapping_add\(([-]?\d+)\)").ok();
+    let mut out: Vec<String> = Vec::new();
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed == "let mut global0: i32 = 0;" || trimmed == "let global0: i32 = 0;" {
+            continue;
+        }
+        if trimmed.starts_with("global0 = ") && trimmed.ends_with(';') {
+            continue;
+        }
+        let mut rewritten = line.to_string();
+        rewritten = rewritten.replace("= global0.wrapping_sub(", "= (0 as i32).wrapping_sub(");
+        rewritten = rewritten.replace("= global0.wrapping_add(", "= (0 as i32).wrapping_add(");
+        if let Some(re) = &re_sub {
+            rewritten = re
+                .replace_all(&rewritten, |caps: &regex::Captures| {
+                    let n = caps
+                        .get(1)
+                        .and_then(|m| m.as_str().parse::<i64>().ok())
+                        .unwrap_or(0);
+                    if n >= 0 {
+                        format!("-{}", n)
+                    } else {
+                        format!("{}", n.wrapping_neg())
+                    }
+                })
+                .to_string();
+        }
+        if let Some(re) = &re_add {
+            rewritten = re
+                .replace_all(&rewritten, |caps: &regex::Captures| {
+                    let n = caps
+                        .get(1)
+                        .and_then(|m| m.as_str().parse::<i64>().ok())
+                        .unwrap_or(0);
+                    format!("{n}")
+                })
+                .to_string();
+        }
+        out.push(rewritten);
+    }
+    out.join("\n")
+}
+
+fn cleanup_empty_impl_blocks(output: String) -> String {
+    let lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    let mut i = 0usize;
+    while i < lines.len() {
+        let t0 = lines[i].trim().to_string();
+        if t0.starts_with("impl ") && t0.ends_with(" {") {
+            if let Some(end) = find_block_end(&lines, i) {
+                let has_body = lines[(i + 1)..end].iter().any(|l| !l.trim().is_empty());
+                if !has_body {
+                    i = end + 1;
+                    continue;
+                }
+            }
+        }
+        out.push(lines[i].clone());
+        i += 1;
+    }
+    out.join("\n")
 }
 
 fn add_blank_line_before_functions(output: String) -> String {
@@ -1434,6 +1507,93 @@ fn cleanup_dead_type_tag_guards(output: String) -> String {
     lines.join("\n")
 }
 
+fn cleanup_label_terminal_break_dead_tail(output: String) -> String {
+    let mut lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
+    let mut i = 0usize;
+    while i < lines.len() {
+        let Some(label) = parse_label_block_line(lines[i].trim()) else {
+            i += 1;
+            continue;
+        };
+        let Some(end) = find_brace_block_end(&lines, i) else {
+            i += 1;
+            continue;
+        };
+
+        if let Some(first_break) = find_top_level_label_break_line(&lines, i + 1, end, &label) {
+            if has_non_empty_lines(&lines, first_break + 1, end) {
+                lines.drain(first_break + 1..end);
+            }
+        }
+
+        let Some(end2) = find_brace_block_end(&lines, i) else {
+            i += 1;
+            continue;
+        };
+        if let Some(last_non_empty) = prev_non_empty_line(&lines, end2) {
+            if lines[last_non_empty].trim() == format!("break '{label};") {
+                lines.remove(last_non_empty);
+                let indent = lines[i]
+                    .chars()
+                    .take_while(|c| c.is_whitespace())
+                    .collect::<String>();
+                lines[i] = format!("{indent}{{");
+            }
+        }
+
+        i += 1;
+    }
+    lines.join("\n")
+}
+
+fn parse_label_block_line(t: &str) -> Option<String> {
+    let (lhs, rhs) = t.split_once(':')?;
+    if rhs.trim() != "{" {
+        return None;
+    }
+    let label = lhs.trim().trim_start_matches('\'');
+    if label.is_empty() || !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return None;
+    }
+    Some(label.to_string())
+}
+
+fn find_top_level_label_break_line(lines: &[String], from: usize, to: usize, label: &str) -> Option<usize> {
+    let mut depth = 0i32;
+    for (idx, line) in lines.iter().enumerate().take(to).skip(from) {
+        let t = line.trim();
+        if depth == 0 && t == format!("break '{label};") {
+            return Some(idx);
+        }
+        let opens = line.chars().filter(|&c| c == '{').count() as i32;
+        let closes = line.chars().filter(|&c| c == '}').count() as i32;
+        depth += opens - closes;
+        if depth < 0 {
+            depth = 0;
+        }
+    }
+    None
+}
+
+fn has_non_empty_lines(lines: &[String], from: usize, to: usize) -> bool {
+    for line in lines.iter().take(to).skip(from) {
+        if !line.trim().is_empty() {
+            return true;
+        }
+    }
+    false
+}
+
+fn prev_non_empty_line(lines: &[String], mut before: usize) -> Option<usize> {
+    while before > 0 {
+        before -= 1;
+        if !lines[before].trim().is_empty() {
+            return Some(before);
+        }
+    }
+    None
+}
+
 fn cleanup_unused_let_bindings(output: String) -> String {
     let mut lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
     // Iterate to fixpoint because one removal may expose more unused lets.
@@ -1647,7 +1807,240 @@ fn is_ident_char(c: char) -> bool {
 fn safe_cleanup(output: String, contract_name: &str) -> String {
     let output = postprocess_remove_unused_methods(output, contract_name);
     let output = postprocess_remove_unused_top_level_helpers(output);
+    let output = postprocess_strip_self_usage(output);
     normalize_indentation(output)
+}
+
+fn postprocess_strip_self_usage(output: String) -> String {
+    let mut lines_out: Vec<String> = Vec::with_capacity(output.lines().count());
+
+    for mut line in output.lines().map(|l| l.to_string()) {
+        let trimmed = line.trim();
+        if trimmed == "&mut self," || trimmed == "&self," {
+            continue;
+        }
+
+        if line.contains("self.global0") {
+            line = line.replace("self.global0", "global0");
+        }
+
+        // Convert method dispatch `self.foo(` into associated call `Self::foo(`.
+        if line.contains("self.") {
+            line = rewrite_self_method_calls(&line);
+        }
+        lines_out.push(line);
+    }
+
+    inject_global0_locals(lines_out)
+}
+
+fn rewrite_self_method_calls(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut i = 0usize;
+    let bytes = line.as_bytes();
+    while i < bytes.len() {
+        if i + 5 <= bytes.len() && &line[i..i + 5] == "self." {
+            let mut j = i + 5;
+            while j < bytes.len() {
+                let ch = bytes[j] as char;
+                if ch.is_ascii_alphanumeric() || ch == '_' {
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+            if j > i + 5 && j < bytes.len() && bytes[j] as char == '(' {
+                out.push_str("Self::");
+                out.push_str(&line[i + 5..j]);
+                i = j;
+                continue;
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
+fn inject_global0_locals(lines: Vec<String>) -> String {
+    let mut out: Vec<String> = Vec::with_capacity(lines.len() + 32);
+    let mut in_fn = false;
+    let mut fn_depth: i32 = 0;
+    let mut fn_header_idx: usize = 0;
+    let mut fn_has_global0 = false;
+    let mut fn_has_global0_decl = false;
+    let mut pending_fn = false;
+
+    for line in lines {
+        let trimmed = line.trim();
+        if !in_fn && (trimmed.starts_with("pub fn ") || trimmed.starts_with("fn ")) {
+            pending_fn = true;
+        }
+        out.push(line.clone());
+
+        if pending_fn && trimmed.ends_with('{') {
+            in_fn = true;
+            pending_fn = false;
+            fn_depth = 1;
+            fn_header_idx = out.len() - 1;
+            fn_has_global0 = false;
+            fn_has_global0_decl = false;
+            continue;
+        }
+        if pending_fn {
+            continue;
+        }
+
+        if in_fn {
+            if trimmed.contains("global0") {
+                fn_has_global0 = true;
+            }
+            if trimmed.starts_with("let mut global0:")
+                || trimmed.starts_with("let global0:")
+                || trimmed.starts_with("let mut global0 =")
+                || trimmed.starts_with("let global0 =")
+            {
+                fn_has_global0_decl = true;
+            }
+            let opens = trimmed.chars().filter(|&c| c == '{').count() as i32;
+            let closes = trimmed.chars().filter(|&c| c == '}').count() as i32;
+            fn_depth += opens - closes;
+            if fn_depth == 0 {
+                if fn_has_global0 && !fn_has_global0_decl {
+                    let indent = out[fn_header_idx]
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
+                    out.insert(fn_header_idx + 1, format!("{indent}    let mut global0: i32 = 0;"));
+                }
+                in_fn = false;
+            }
+        }
+    }
+
+    out.join("\n")
+}
+
+fn cleanup_signature_empty_param_lines(output: String) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
+    let mut i = 0usize;
+    while i < lines.len() {
+        if i + 1 < lines.len() {
+            let a = lines[i].trim_end();
+            let b = lines[i + 1].trim();
+            if a.ends_with('(') && b.is_empty() {
+                out.push(lines[i].clone());
+                i += 2;
+                continue;
+            }
+        }
+        out.push(lines[i].clone());
+        i += 1;
+    }
+    out.join("\n")
+}
+
+fn fix_address_call_type_mismatches(output: String) -> String {
+    let mut output = output.replace("address_from_i64(env,", "address_from_i64(&env,");
+    // Common Address-typed parameter names in Soroban contracts.
+    for name in [
+        "from",
+        "to",
+        "spender",
+        "admin",
+        "new_admin",
+        "user",
+        "dev",
+        "id",
+        "from_addr",
+        "to_addr",
+        "owner",
+    ] {
+        let from = format!("address_from_i64(&env, {name}).require_auth();");
+        let to = format!("{name}.require_auth();");
+        output = output.replace(&from, &to);
+    }
+
+    let lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+
+    let mut in_signature = false;
+    let mut in_fn = false;
+    let mut fn_depth: i32 = 0;
+    let mut address_params: HashSet<String> = HashSet::new();
+
+    for line in lines {
+        let mut line = line;
+        let trimmed = line.trim();
+
+        if !in_signature && !in_fn && (trimmed.starts_with("pub fn ") || trimmed.starts_with("fn ")) {
+            in_signature = true;
+            address_params.clear();
+        }
+        if in_signature {
+            if let Some(name) = extract_address_param_name(trimmed) {
+                address_params.insert(name);
+            }
+            if trimmed.starts_with(')') && trimmed.ends_with('{') {
+                in_signature = false;
+                in_fn = true;
+                fn_depth = 1;
+                out.push(line);
+                continue;
+            }
+            out.push(line);
+            continue;
+        }
+
+        if in_fn {
+            line = line.replace("address_from_i64(env,", "address_from_i64(&env,");
+            line = line.replace("address_from_i64( env,", "address_from_i64(&env,");
+            line = rewrite_require_auth_address_param(&line, &address_params);
+            let opens = line.chars().filter(|&c| c == '{').count() as i32;
+            let closes = line.chars().filter(|&c| c == '}').count() as i32;
+            fn_depth += opens - closes;
+            if fn_depth <= 0 {
+                in_fn = false;
+                fn_depth = 0;
+                address_params.clear();
+            }
+        }
+
+        out.push(line);
+    }
+
+    out.join("\n")
+}
+
+fn extract_address_param_name(trimmed: &str) -> Option<String> {
+    let mut line = trimmed.trim_end_matches(',').trim();
+    if line.starts_with("mut ") {
+        line = line.trim_start_matches("mut ").trim();
+    }
+    let (name, ty) = line.split_once(':')?;
+    let name = name.trim();
+    let ty = ty.trim();
+    if ty == "Address" || ty == "soroban_sdk::Address" {
+        Some(name.to_string())
+    } else {
+        None
+    }
+}
+
+fn rewrite_require_auth_address_param(line: &str, address_params: &HashSet<String>) -> String {
+    let trimmed = line.trim();
+    let prefix = "address_from_i64(&env,";
+    let suffix = ").require_auth();";
+    if !trimmed.starts_with(prefix) || !trimmed.ends_with(suffix) {
+        return line.to_string();
+    }
+    let arg = trimmed[prefix.len()..trimmed.len() - suffix.len()].trim();
+    if !address_params.contains(arg) {
+        return line.to_string();
+    }
+    let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
+    format!("{indent}{arg}.require_auth();")
 }
 
 fn normalize_indentation(output: String) -> String {
@@ -1730,22 +2123,24 @@ fn normalize_indentation(output: String) -> String {
 fn collect_self_calls(output: &str) -> HashSet<String> {
     let mut calls: HashSet<String> = HashSet::new();
     for line in output.lines() {
-        let mut rest = line;
-        while let Some(pos) = rest.find("self.") {
-            rest = &rest[pos + 5..];
-            let mut end = 0;
-            for ch in rest.chars() {
-                if ch.is_ascii_alphanumeric() || ch == '_' {
-                    end += ch.len_utf8();
+        for marker in ["self.", "Self::"] {
+            let mut rest = line;
+            while let Some(pos) = rest.find(marker) {
+                rest = &rest[pos + marker.len()..];
+                let mut end = 0;
+                for ch in rest.chars() {
+                    if ch.is_ascii_alphanumeric() || ch == '_' {
+                        end += ch.len_utf8();
+                    } else {
+                        break;
+                    }
+                }
+                if end > 0 {
+                    calls.insert(rest[..end].to_string());
+                    rest = &rest[end..];
                 } else {
                     break;
                 }
-            }
-            if end > 0 {
-                calls.insert(rest[..end].to_string());
-                rest = &rest[end..];
-            } else {
-                break;
             }
         }
     }

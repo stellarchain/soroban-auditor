@@ -9,7 +9,6 @@ pub struct HelloWorldContract;
 impl HelloWorldContract {
 
     pub fn hello(
-        &mut self,
         env: Env,
         to: Symbol,
     ) -> Vec<Symbol> {

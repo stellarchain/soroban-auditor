@@ -21,7 +21,7 @@ impl Pattern for DecodeStatusGuardPattern {
         }
 
         let re_status_let =
-            Regex::new(r"^\s*let mut (?P<var>\w+) = mload32!\((?P<addr>.+)\) as i32;$").ok()?;
+            Regex::new(r"^\s*let(?: mut)? (?P<var>\w+)(?::\s*i32)? = mload32!\((?P<addr>.+)\)(?: as i32)?;$").ok()?;
         let re_if_ne_1 = Regex::new(r"^\s*if (?P<var>\w+) != 1 \{$").ok()?;
 
         let mut body = block.body.clone();
@@ -182,4 +182,3 @@ mod tests {
         );
     }
 }
-

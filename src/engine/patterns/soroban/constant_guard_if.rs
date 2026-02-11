@@ -28,19 +28,17 @@ impl Pattern for ConstantGuardIfPattern {
                 i += 1;
                 continue;
             };
-            let Some(if_idx) = next_non_empty_index(&body, i + 1) else {
-                break;
-            };
-            if if_idx != i + 1 {
+
+            let Some(if_idx) = find_next_linear_if_for_var(&body, i + 1, &var) else {
                 i += 1;
                 continue;
-            }
+            };
 
             let Some((cond_var, op, cond_value)) = parse_simple_if_cond(body[if_idx].trim()) else {
                 i += 1;
                 continue;
             };
-            if cond_var != var {
+            if cond_var != var || !segment_is_linear(&body[i + 1..if_idx]) {
                 i += 1;
                 continue;
             }
@@ -147,14 +145,65 @@ fn has_else_peer(lines: &[String], if_end: usize) -> bool {
     false
 }
 
-fn next_non_empty_index(lines: &[String], mut idx: usize) -> Option<usize> {
+fn find_next_linear_if_for_var(lines: &[String], start: usize, var: &str) -> Option<usize> {
+    let mut idx = start;
     while idx < lines.len() {
-        if !lines[idx].trim().is_empty() {
+        let t = lines[idx].trim();
+        if t.is_empty() {
+            idx += 1;
+            continue;
+        }
+        if t == "{" || t == "}" || t.starts_with("'") {
+            return None;
+        }
+        if t.starts_with("if ") && t.contains(var) {
             return Some(idx);
+        }
+        if let Some(lhs) = parse_assignment_lhs(t) {
+            if lhs == var {
+                return None;
+            }
+        }
+        if parse_int_assignment(t).is_some() {
+            return None;
         }
         idx += 1;
     }
     None
+}
+
+fn parse_assignment_lhs(t: &str) -> Option<&str> {
+    if !t.ends_with(';') || !t.contains(" = ") {
+        return None;
+    }
+    let (lhs, _) = t.trim_end_matches(';').split_once(" = ")?;
+    let lhs = lhs.trim();
+    if lhs.is_empty() || !lhs.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return None;
+    }
+    Some(lhs)
+}
+
+fn segment_is_linear(lines: &[String]) -> bool {
+    for line in lines {
+        let t = line.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if t.starts_with("if ")
+            || t.starts_with("else")
+            || t.starts_with("match ")
+            || t.starts_with("loop ")
+            || t.starts_with("while ")
+            || t.starts_with("for ")
+            || t.starts_with('\'')
+            || t == "{"
+            || t == "}"
+        {
+            return false;
+        }
+    }
+    true
 }
 
 fn dedent_slice(lines: &[String], spaces: usize) -> Vec<String> {
@@ -172,4 +221,3 @@ fn dedent_line(line: &str, spaces: usize) -> String {
     }
     line[consumed..].to_string()
 }
-
