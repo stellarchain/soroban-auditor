@@ -9,10 +9,23 @@ cargo build
 cargo run --bin soroban-auditor -- <input.wasm> [output.rs]
 ```
 
+Or read wasm bytes directly from `stdin`:
+
+```bash
+cat input.wasm | cargo run --bin soroban-auditor -- --stdin-payload [output.rs]
+```
+
 Useful option:
 
 ```bash
 cargo run --bin soroban-auditor -- --use-name-section <input.wasm> [output.rs]
+```
+
+Write generated code to stdout:
+
+```bash
+cargo run --bin soroban-auditor -- --stdout <input.wasm>
+cat input.wasm | cargo run --bin soroban-auditor -- --stdin-payload --stdout
 ```
 
 ## Know-How (Real Pipeline)
