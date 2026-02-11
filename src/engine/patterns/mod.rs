@@ -126,6 +126,7 @@ mod remove_mut_self;
 mod remove_unnecessary_return;
 mod remove_unreachable_end;
 mod remove_type_tag_checks;
+mod eliminate_stack_frame;
 
 pub use consolidate_comments::ConsolidateCommentsPattern;
 pub use conversion_elimination::ConversionEliminationPattern;
@@ -155,3 +156,4 @@ pub use remove_mut_self::RemoveMutSelfPattern;
 pub use remove_unnecessary_return::RemoveUnnecessaryReturnPattern;
 pub use remove_unreachable_end::RemoveUnreachableEndPattern;
 pub use remove_type_tag_checks::RemoveTypeTagChecksPattern;
+pub use eliminate_stack_frame::EliminateStackFramePattern;

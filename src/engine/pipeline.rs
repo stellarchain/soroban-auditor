@@ -26,6 +26,7 @@ use crate::engine::patterns::{
     RemoveUnnecessaryReturnPattern,
     RemoveUnreachableEndPattern,
     RemoveTypeTagChecksPattern,
+    EliminateStackFramePattern,
 };
 
 pub struct Engine {
@@ -177,6 +178,7 @@ fn register_soroban_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
 
 fn register_cleanup_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     // NEW: Source-like code improvements - run early
+    patterns.push(Box::new(EliminateStackFramePattern::new()));  // MUST run first!
     patterns.push(Box::new(RemoveMutSelfPattern::new()));
     patterns.push(Box::new(RemoveTypeTagChecksPattern::new()));
     patterns.push(Box::new(RemoveUnreachableEndPattern::new()));

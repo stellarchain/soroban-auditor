@@ -16,11 +16,26 @@ fn val_to_i64(v: Val) -> i64 {
 impl HelloWorldContract {
 
     pub fn hello(
-        &mut self,
+
         env: Env,
         to: Symbol,
     ) -> Vec<Symbol> {
-        return vec![&env, Symbol::new(env, "Hello"), to];
+        let mut a: i32 = 0;
+        let mut b: i32 = 0;
+        a = var3.wrapping_sub(32);
+        b = to as i32 & 255;
+        b = 0;
+        while b != 16 {
+            mstore64!(a.wrapping_add(16).wrapping_add(b) as usize, 0 /* Void */ as u64);
+            b = b.wrapping_add(8);
+        }
+        b = 0;
+        while b != 16 {
+            let c = mload64!(a.wrapping_add(b) as usize) as i64;
+            mstore64!(a.wrapping_add(16).wrapping_add(b) as usize, c as u64);
+            b = b.wrapping_add(8);
+        }
+        vec![&env, Symbol::new(env, "Hello"), to];
     }
 }
 
