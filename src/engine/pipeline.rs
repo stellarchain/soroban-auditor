@@ -22,6 +22,10 @@ use crate::engine::patterns::{
     TypeTagGuardCleanupPattern, TypeTagGuardStripPattern, VmScaffoldCleanupPattern,
     VecBuilderAssignmentPattern,
     UnreachableCleanupPattern,
+    RemoveMutSelfPattern,
+    RemoveUnnecessaryReturnPattern,
+    RemoveUnreachableEndPattern,
+    RemoveTypeTagChecksPattern,
 };
 
 pub struct Engine {
@@ -172,6 +176,11 @@ fn register_soroban_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
 }
 
 fn register_cleanup_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
+    // NEW: Source-like code improvements - run early
+    patterns.push(Box::new(RemoveMutSelfPattern::new()));
+    patterns.push(Box::new(RemoveTypeTagChecksPattern::new()));
+    patterns.push(Box::new(RemoveUnreachableEndPattern::new()));
+
     // Smart variable naming (now with single-pass protection)
     patterns.push(Box::new(SmartVariableNamingPattern::new()));
     patterns.push(Box::new(DecodeStatusGuardPattern::new()));
@@ -203,6 +212,7 @@ fn register_cleanup_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     patterns.push(Box::new(RemoveUnusedLocalsPattern::new()));
     patterns.push(Box::new(DeadTempCleanupPattern::new()));
     patterns.push(Box::new(RemoveTerminalReturnPattern::new()));
+    patterns.push(Box::new(RemoveUnnecessaryReturnPattern::new()));
     patterns.push(Box::new(ReturnVoidCleanupPattern::new()));
     patterns.push(Box::new(UnreachableCleanupPattern::new()));
     patterns.push(Box::new(TerminalScopeUnwrapPattern::new()));

@@ -122,6 +122,10 @@ mod vec_builder_assignment;
 mod status_result_guard_loop;
 mod status_result_guard_label;
 mod status_result_guard_text;
+mod remove_mut_self;
+mod remove_unnecessary_return;
+mod remove_unreachable_end;
+mod remove_type_tag_checks;
 
 pub use consolidate_comments::ConsolidateCommentsPattern;
 pub use conversion_elimination::ConversionEliminationPattern;
@@ -147,3 +151,7 @@ pub use type_tag_guard_strip::TypeTagGuardStripPattern;
 pub use unreachable_cleanup::UnreachableCleanupPattern;
 pub use vm_scaffold_cleanup::VmScaffoldCleanupPattern;
 pub use vec_builder_assignment::VecBuilderAssignmentPattern;
+pub use remove_mut_self::RemoveMutSelfPattern;
+pub use remove_unnecessary_return::RemoveUnnecessaryReturnPattern;
+pub use remove_unreachable_end::RemoveUnreachableEndPattern;
+pub use remove_type_tag_checks::RemoveTypeTagChecksPattern;
