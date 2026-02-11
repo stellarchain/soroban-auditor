@@ -15,5 +15,4 @@ pub mod reorder_analysis;
 pub mod rewrites;
 pub mod sdk;
 pub mod semantic_resolver;
-pub mod soroban;
 pub mod wasm_ir;

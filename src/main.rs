@@ -18,7 +18,6 @@ mod reorder_analysis;
 mod rewrites;
 mod sdk;
 mod semantic_resolver;
-mod soroban;
 mod wasm_ir;
 
 fn main() {
