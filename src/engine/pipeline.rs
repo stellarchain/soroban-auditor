@@ -1,24 +1,26 @@
-use crate::engine::function::{join_functions, split_functions};
+use crate::engine::function::{join_functions, split_functions, FunctionBlock};
 use crate::engine::pattern::Pattern;
 use crate::engine::preclean;
 use crate::engine::patterns::{
     BreakToLabelPattern, ConsolidateCommentsPattern, ConstantMatchCleanupPattern,
     ContinueBreakCleanup, CompactTempNamesPattern, CompoundAssignCleanupPattern, ConversionEliminationPattern, CopyPayloadPattern, CountedLoopPattern,
-    DeadTempCleanupPattern, DeduplicateVariablesPattern, EmptyIfBlockPattern, ForEachValPattern,
+    DeadTempCleanupPattern, DecodeStatusGuardPattern, DeduplicateVariablesPattern, EmptyIfBlockPattern, ForEachValPattern,
     ElseCompactionPattern,
     FunctionSignaturePattern, GuardBlockBreaks, GuardBreakUnreachablePattern,
-    IfChainToGuardsPattern, IfConditionCleanupPattern, InlineFrameBasePattern, InlineVecBuilderMacroPattern,
-    InlineValRoundtripPattern, IrLabelCleanup, LabelBlockCollapse, LabelGuardIf, LabelIfBreakToIfElsePattern, LabelMatchBreakGuard, LabelLoopIfContinueToWhilePattern, LabelLoopIfElseToWhilePattern, LabelTrapTailInlinePattern, LabeledSingleLoopBreakToWhilePattern,
+    IfChainToGuardsPattern, IfConditionCleanupPattern, I128DecodeSlotsPattern, I128SemanticPropagationPattern, InlineFrameBasePattern, InlineVecBuilderMacroPattern,
+    InlineValRoundtripPattern, IrLabelCleanup, LabelBlockCollapse, LabelBreakTrapGuardPattern, LabelGuardIf, LabelIfBreakToIfElsePattern, LabelMatchBreakGuard, LabelLoopIfContinueToWhilePattern, LabelLoopIfElseToWhilePattern, LabelTrapTailInlinePattern, LabeledSingleLoopBreakToWhilePattern,
     LinearMemoryVecBuildPattern, RedundantTypeCheckPattern, RemoveTerminalReturnPattern,
     RemoveUnusedLocalsPattern,
-    LoopGuardChainToIf, LoopGuardToIf, LoopIfBreakTailToWhilePattern, LoopIfUnreachableToBlock, LoopToWhile,
-    MathOperationsPattern, MissingSemicolonsPattern, NextStringWhile,
+    RemoveUnusedParamMutPattern,
+    LoopComplementaryIfUnwrapPattern, LoopGuardChainToIf, LoopGuardToIf, LoopIfBreakTailToWhilePattern, LoopIfOnlyToWhileTextPattern, LoopIfUnreachableToBlock, LoopSingleIfToWhilePattern, LoopToWhile,
+    ConstantGuardIfPattern, MathOperationsPattern, MissingSemicolonsPattern, MloadTempAssignFoldPattern, NextStringWhile,
+    NoopMatchLoopPattern,
     RedundantScopePattern,
     PruneEmptyIfBlocksPattern, ReturnVoidCleanupPattern, TerminalScopeUnwrapPattern,
     SerializeBytesFixPattern, SimpleLoopUnlabel, SinglePassLoopCleanup, SinglePassUnlabeledLoopCleanup, SmartVariableNamingPattern,
-    StackCopyVecReturnPattern, StatusResultGuardLoopPattern, StatusResultGuardTextPattern, StorageAccessPattern, SymbolLiteralRecoveryPattern, TrailingUnreachableCleanupPattern,
+    StackCopyVecReturnPattern, StatusGuardBlockUnwrapPattern, StatusResultGuardLoopPattern, StatusResultGuardTextPattern, StorageAccessPattern, SymbolLiteralRecoveryPattern, TrailingUnreachableCleanupPattern,
     StatusResultGuardLabelPattern,
-    TypeTagGuardCleanupPattern, VmScaffoldCleanupPattern,
+    TypeTagGuardCleanupPattern, TypeTagGuardStripPattern, UnwrapTryFromValIfPattern, UnwrapTypeTagOkIfPattern, VmScaffoldCleanupPattern, WasmTypeGuardPrunePattern,
     VecBuilderAssignmentPattern,
     UnreachableCleanupPattern,
 };
@@ -61,8 +63,11 @@ impl Engine {
 
                 for pattern in &self.patterns {
                     if let Some(new_block) = pattern.apply(block) {
-                        *block = new_block;
-                        changed = true;
+                        // Safety gate: reject rewrites that break local block structure.
+                        if is_structurally_valid_block(&new_block) {
+                            *block = new_block;
+                            changed = true;
+                        }
                     }
                 }
 
@@ -79,6 +84,26 @@ impl Engine {
     fn preclean_input(&self, input: String) -> String {
         preclean::run(input)
     }
+}
+
+fn is_structurally_valid_block(block: &FunctionBlock) -> bool {
+    let mut depth: i32 = 0;
+    for line in std::iter::once(&block.header)
+        .chain(block.body.iter())
+        .chain(std::iter::once(&block.footer))
+    {
+        for ch in line.chars() {
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
+                depth -= 1;
+                if depth < 0 {
+                    return false;
+                }
+            }
+        }
+    }
+    depth == 0
 }
 
 pub fn default_engine() -> Engine {
@@ -108,6 +133,7 @@ fn register_cfg_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     patterns.push(Box::new(LabelLoopIfElseToWhilePattern::new()));
     patterns.push(Box::new(LoopIfBreakTailToWhilePattern::new()));
     patterns.push(Box::new(LabelTrapTailInlinePattern::new()));
+    patterns.push(Box::new(LabelBreakTrapGuardPattern::new()));
     // Disabled: can produce malformed guard if/else around labels in some contracts.
     // engine.register(LabelBlockTailGuard::new());
     // Disabled: may rewrite labeled guards into malformed detached else blocks.
@@ -134,8 +160,12 @@ fn register_cfg_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     // engine.register(GuardEarlyReturn::new());
     // engine.register(LoopUnreachableElse::new());
     patterns.push(Box::new(SinglePassUnlabeledLoopCleanup::new()));
+    patterns.push(Box::new(LoopComplementaryIfUnwrapPattern::new()));
+    patterns.push(Box::new(LoopSingleIfToWhilePattern::new()));
+    patterns.push(Box::new(LoopIfOnlyToWhileTextPattern::new()));
     patterns.push(Box::new(LoopToWhile::new()));
     patterns.push(Box::new(SimpleLoopUnlabel::new()));
+    patterns.push(Box::new(NoopMatchLoopPattern::new()));
     patterns.push(Box::new(CopyPayloadPattern::new()));
     // Disabled: can over-compress label chains and lose guard branches in complex CFGs.
     // engine.register(LabelLadderInline::new());
@@ -170,15 +200,24 @@ fn register_soroban_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
 fn register_cleanup_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     // Smart variable naming (now with single-pass protection)
     patterns.push(Box::new(SmartVariableNamingPattern::new()));
+    patterns.push(Box::new(DecodeStatusGuardPattern::new()));
+    patterns.push(Box::new(I128DecodeSlotsPattern::new()));
+    patterns.push(Box::new(I128SemanticPropagationPattern::new()));
+    patterns.push(Box::new(MloadTempAssignFoldPattern::new()));
     patterns.push(Box::new(CompactTempNamesPattern::new()));
     patterns.push(Box::new(DeduplicateVariablesPattern::new()));
     patterns.push(Box::new(InlineFrameBasePattern::new()));
     patterns.push(Box::new(StackCopyVecReturnPattern::new()));
     patterns.push(Box::new(SymbolLiteralRecoveryPattern::new()));
     patterns.push(Box::new(TypeTagGuardCleanupPattern::new()));
+    patterns.push(Box::new(TypeTagGuardStripPattern::new()));
+    patterns.push(Box::new(WasmTypeGuardPrunePattern::new()));
+    patterns.push(Box::new(UnwrapTryFromValIfPattern::new()));
+    patterns.push(Box::new(UnwrapTypeTagOkIfPattern::new()));
     patterns.push(Box::new(VmScaffoldCleanupPattern::new()));
     patterns.push(Box::new(GuardBreakUnreachablePattern::new()));
     patterns.push(Box::new(RedundantTypeCheckPattern::new()));
+    patterns.push(Box::new(ConstantGuardIfPattern::new()));
     patterns.push(Box::new(IfConditionCleanupPattern::new()));
     patterns.push(Box::new(IfChainToGuardsPattern::new()));
     patterns.push(Box::new(IfConditionCleanupPattern::new()));
@@ -200,10 +239,13 @@ fn register_cleanup_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     patterns.push(Box::new(ElseCompactionPattern::new()));
     patterns.push(Box::new(EmptyIfBlockPattern::new()));
     patterns.push(Box::new(PruneEmptyIfBlocksPattern::new()));
+    patterns.push(Box::new(LoopIfOnlyToWhileTextPattern::new()));
     patterns.push(Box::new(StatusResultGuardLoopPattern::new()));
     patterns.push(Box::new(StatusResultGuardLabelPattern::new()));
     patterns.push(Box::new(StatusResultGuardTextPattern::new()));
+    patterns.push(Box::new(StatusGuardBlockUnwrapPattern::new()));
     patterns.push(Box::new(FunctionSignaturePattern::new()));
+    patterns.push(Box::new(RemoveUnusedParamMutPattern::new()));
     patterns.push(Box::new(TrailingUnreachableCleanupPattern::new()));
 
     // Comment cleanup - MUST RUN LAST to consolidate all diagnostic comments
