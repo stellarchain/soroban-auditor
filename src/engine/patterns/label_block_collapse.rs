@@ -59,6 +59,21 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
                     *changed = true;
                     continue;
                 }
+                if !contains_control_for_label(&new_body, &label) {
+                    let indent = header
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
+                    out.push(Node::Block {
+                        kind: BlockKind::Other,
+                        label: None,
+                        header: format!("{indent}{{"),
+                        body: new_body,
+                        footer,
+                    });
+                    *changed = true;
+                    continue;
+                }
                 out.push(Node::Block {
                     kind: BlockKind::Other,
                     label: Some(label),
@@ -146,6 +161,27 @@ fn contains_continue_label(nodes: &[Node], labels: &[String]) -> bool {
             }
             Node::Block { body, .. } => {
                 if contains_continue_label(body, labels) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn contains_control_for_label(nodes: &[Node], label: &str) -> bool {
+    let break_target = format!("break '{};", label);
+    let continue_target = format!("continue '{};", label);
+    for node in nodes {
+        match node {
+            Node::Line(line) => {
+                let t = line.trim();
+                if t == break_target || t == continue_target {
+                    return true;
+                }
+            }
+            Node::Block { body, .. } => {
+                if contains_control_for_label(body, label) {
                     return true;
                 }
             }

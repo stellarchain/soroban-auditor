@@ -49,7 +49,10 @@ impl SmartVariableNamingPattern {
         usage_context: &[String],
     ) -> Option<String> {
         // Skip if already well-named
-        if !var_name.starts_with("var") && !var_name.starts_with("slot_var") {
+        if !var_name.starts_with("var")
+            && !var_name.starts_with("slot_var")
+            && !var_name.starts_with("sv")
+        {
             return None;
         }
 
@@ -220,6 +223,11 @@ impl Pattern for SmartVariableNamingPattern {
         let mut changed = false;
         let mut current_body = block.body.clone();
         let mut rename_map: HashMap<String, String> = HashMap::new();
+        let declared_names: std::collections::HashSet<String> = block
+            .body
+            .iter()
+            .filter_map(|line| Self::extract_var_declaration(line))
+            .collect();
 
         // First pass: identify variables to rename
         for (idx, line) in block.body.iter().enumerate() {
@@ -230,6 +238,7 @@ impl Pattern for SmartVariableNamingPattern {
                     // Avoid conflicts - check both keys and values
                     if !rename_map.contains_key(&new_name)
                         && !rename_map.values().any(|v| v == &new_name)
+                        && !(declared_names.contains(&new_name) && new_name != var_name)
                         && new_name != var_name
                     {
                         rename_map.insert(var_name, new_name);

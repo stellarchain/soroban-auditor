@@ -29,7 +29,7 @@ impl Pattern for VmScaffoldCleanupPattern {
         }
 
         let mut body = block.body.clone();
-        let mut changed = false;
+        let changed = true;
 
         let (frame_var, frame_size, prologue_range) = find_frame_setup(&body)?;
         let (restore_idx, ret_idx) = find_frame_restore_and_return(&body, &frame_var, frame_size)?;
@@ -50,8 +50,6 @@ impl Pattern for VmScaffoldCleanupPattern {
         let _ = ret_idx.saturating_sub(1);
         // Remove prologue.
         body.drain(prologue_range.0..=prologue_range.1);
-        changed = true;
-
         if changed {
             Some(FunctionBlock {
                 header: block.header.clone(),

@@ -134,14 +134,46 @@ pub(super) fn emit_call_indirect<W: Write>(
 ) {
     let Type::Function(ref fn_type) = types.types()[type_index as usize];
     indirect_fns.entry(type_index).or_insert_with(Vec::new);
+    let table_index_expr = expr_builder.pop_formatted(precedence::AS).unwrap();
+    let arg_count = fn_type.params().len();
+    let args_start = expr_builder.len().saturating_sub(arg_count);
+    let args: Vec<String> = expr_builder
+        .inner()
+        .drain(args_start..)
+        .map(|(_, expr)| expr)
+        .collect();
 
     write!(writer, "{}", indentation).unwrap();
     for _ in fn_type.results() {
         write!(writer, "let var{} = ", *expr_index).unwrap();
     }
-    let _ = expr_builder.pop();
-    write!(writer, "/* TODO: call_indirect */ 0").unwrap();
-    writeln!(writer, ";").unwrap();
+    if fn_type.results().is_empty() {
+        writeln!(
+            writer,
+            "{{ let _ = ({}{}); unimplemented!(\"call_indirect type {}\"); }};",
+            table_index_expr,
+            if args.is_empty() {
+                String::new()
+            } else {
+                format!(", {}", args.join(", "))
+            },
+            type_index
+        )
+        .unwrap();
+    } else {
+        writeln!(
+            writer,
+            "{{ let _ = ({}{}); unimplemented!(\"call_indirect type {}\") }};",
+            table_index_expr,
+            if args.is_empty() {
+                String::new()
+            } else {
+                format!(", {}", args.join(", "))
+            },
+            type_index
+        )
+        .unwrap();
+    }
 
     for _ in fn_type.results() {
         expr_builder.push((precedence::PATH, format!("var{}", *expr_index)));

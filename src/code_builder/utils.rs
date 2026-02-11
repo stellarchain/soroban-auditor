@@ -91,10 +91,11 @@ pub fn parse_stack_addr(addr: &str) -> Option<(String, i32)> {
         .replace(" as i32", "")
         .replace(" as i64", "")
         .replace(" as usize", "");
-    if let Some(caps) = Regex::new(r"^(var\d+)$").ok()?.captures(&s) {
+    let ident = r"[A-Za-z_][A-Za-z0-9_]*";
+    if let Some(caps) = Regex::new(&format!(r"^({ident})$")).ok()?.captures(&s) {
         return Some((caps[1].to_string(), 0));
     }
-    if let Some(caps) = Regex::new(r"^(var\d+)\.wrapping_add\(([-\d]+)\)$")
+    if let Some(caps) = Regex::new(&format!(r"^({ident})\.wrapping_add\(([-\d]+)\)$"))
         .ok()?
         .captures(&s)
     {
@@ -102,7 +103,7 @@ pub fn parse_stack_addr(addr: &str) -> Option<(String, i32)> {
         let off = caps[2].parse::<i32>().ok()?;
         return Some((base, off));
     }
-    if let Some(caps) = Regex::new(r"^(var\d+)\.wrapping_sub\(([-\d]+)\)$")
+    if let Some(caps) = Regex::new(&format!(r"^({ident})\.wrapping_sub\(([-\d]+)\)$"))
         .ok()?
         .captures(&s)
     {
@@ -114,7 +115,8 @@ pub fn parse_stack_addr(addr: &str) -> Option<(String, i32)> {
 }
 
 pub fn slot_name(base: &str, offset: i32, suffix: &str) -> String {
-    let mut name = format!("slot_{}_{}_{}", base, offset, suffix);
+    let short_base = base.strip_prefix("var").unwrap_or(base);
+    let mut name = format!("sv{}_{}_{}", short_base, offset, suffix);
     name = name.replace('-', "m");
     name
 }

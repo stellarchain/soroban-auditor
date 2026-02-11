@@ -77,20 +77,12 @@ impl Pattern for DeduplicateVariablesPattern {
         let mut new_body: Vec<String> = Vec::new();
 
         for line in &block.body {
-            let trimmed = line.trim();
-
             // Check if this is a simple variable initialization
             if Self::is_simple_initialization(line) {
                 if let Some(var_name) = Self::extract_var_name(line) {
                     // If already declared, skip this duplicate
                     if declared_vars.contains(&var_name) {
                         changed = true;
-                        let indent = line.len() - line.trim_start().len();
-                        new_body.push(format!(
-                            "{}// Removed duplicate declaration: {}",
-                            " ".repeat(indent),
-                            trimmed
-                        ));
                         continue;
                     }
 
@@ -163,10 +155,8 @@ mod tests {
         };
 
         let result = pattern.apply(&block).unwrap();
-        assert_eq!(result.body.len(), 4);
+        assert_eq!(result.body.len(), 2);
         assert!(result.body[0].contains("let mut value"));
-        assert!(result.body[1].contains("// Removed duplicate"));
-        assert!(result.body[2].contains("// Removed duplicate"));
-        assert!(result.body[3].contains("value = 42"));
+        assert!(result.body[1].contains("value = 42"));
     }
 }

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
@@ -29,7 +31,7 @@ pub struct SdkArg {
 
 impl SdkFunctionDetector {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let json_data = include_str!("../soroban/common_env_soroban.json");
+        let json_data = include_str!("soroban/common_env_soroban.json");
         let data: Value = serde_json::from_str(json_data)?;
 
         let mut export_to_info = HashMap::new();

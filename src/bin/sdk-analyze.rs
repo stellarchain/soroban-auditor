@@ -5,7 +5,6 @@ extern crate structopt;
 use parity_wasm::deserialize_file;
 use parity_wasm::elements::{ImportCountType, Instruction};
 use soroban_auditor::sdk::{get_backend, SdkFunctionDetector, SdkUsageAnalyzer};
-use soroban_auditor::wasm_ir::{mangle_fn_name, Function};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use structopt::StructOpt;

@@ -1,4 +1,6 @@
-use crate::sdk::detector::{FunctionCategory, SdkFunctionDetector};
+#![allow(dead_code)]
+
+use crate::sdk::detector::SdkFunctionDetector;
 use std::collections::HashMap;
 
 /// SDK usage analyzer for contracts

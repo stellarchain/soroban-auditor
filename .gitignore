@@ -2,3 +2,7 @@
 **/*.rs.bk
 /debug.txt
 .idea
+.claude
+.codex
+.vimspector.json
+/playground

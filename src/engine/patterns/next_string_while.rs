@@ -289,20 +289,6 @@ fn find_enclosing_loop_start(lines: &[String], idx: usize) -> Option<usize> {
     None
 }
 
-fn find_parent_label_block(lines: &[String], child_start: usize, label: &str) -> Option<usize> {
-    let target = format!("'label{}: {{", label);
-    for s in (0..child_start).rev() {
-        if lines[s].trim() == target {
-            if let Some(end) = find_matching_end(lines, s) {
-                if end > child_start {
-                    return Some(s);
-                }
-            }
-        }
-    }
-    None
-}
-
 fn find_matching_end(lines: &[String], start: usize) -> Option<usize> {
     let mut depth: i32 = 0;
     for i in start..lines.len() {

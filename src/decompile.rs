@@ -500,6 +500,7 @@ pub fn collect_imports(
     imports
 }
 
+#[allow(dead_code)]
 pub fn extract_data_segments(module: &Module) -> Vec<Vec<u8>> {
     let mut segments = Vec::new();
     if let Some(data_section) = module.data_section() {
@@ -510,6 +511,7 @@ pub fn extract_data_segments(module: &Module) -> Vec<Vec<u8>> {
     segments
 }
 
+#[allow(dead_code)]
 pub fn extract_string_literals(module: &Module) -> Vec<String> {
     let mut literals = Vec::new();
     for segment in extract_data_segments(module) {
@@ -535,6 +537,7 @@ pub fn extract_string_literals(module: &Module) -> Vec<String> {
     literals
 }
 
+#[allow(dead_code)]
 pub fn parse_bytesn_len(type_str: &str) -> Option<usize> {
     let bytesn_pos = type_str.find("BytesN")?;
     let after = &type_str[bytesn_pos..];
@@ -544,6 +547,7 @@ pub fn parse_bytesn_len(type_str: &str) -> Option<usize> {
     len_str.parse::<usize>().ok()
 }
 
+#[allow(dead_code)]
 pub fn format_byte_array(bytes: &[u8]) -> String {
     let mut out = String::new();
     out.push('[');

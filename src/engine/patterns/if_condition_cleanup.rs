@@ -90,6 +90,12 @@ fn rewrite_if_header(header: &str) -> Option<String> {
 }
 
 fn normalize_if_condition(cond: &str) -> Option<String> {
+    if let Some(unwrapped) = unwrap_double_negations(cond) {
+        return Some(unwrapped);
+    }
+    if let Some(inner) = cond.strip_prefix("!!(").and_then(|s| s.strip_suffix(')')) {
+        return Some(inner.trim().to_string());
+    }
     if let Some(v) = normalize_bool_cast_condition(cond) {
         return Some(v);
     }
@@ -99,6 +105,51 @@ fn normalize_if_condition(cond: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn unwrap_double_negations(cond: &str) -> Option<String> {
+    let mut changed = false;
+    let bytes = cond.as_bytes();
+    let mut out = String::with_capacity(cond.len());
+    let mut i = 0usize;
+
+    while i < bytes.len() {
+        if cond[i..].starts_with("!(!(") {
+            let inner_start = i + 4;
+            let mut depth = 1i32;
+            let mut j = inner_start;
+            while j < bytes.len() {
+                let ch = bytes[j] as char;
+                if ch == '(' {
+                    depth += 1;
+                } else if ch == ')' {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                j += 1;
+            }
+            if depth == 0 {
+                let outer_close = j + 1;
+                if outer_close < bytes.len() && bytes[outer_close] as char == ')' {
+                    out.push_str(&cond[inner_start..j]);
+                    i = outer_close + 1;
+                    changed = true;
+                    continue;
+                }
+            }
+        }
+
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+
+    if changed {
+        Some(out)
+    } else {
+        None
+    }
 }
 
 fn normalize_bool_cast_condition(cond: &str) -> Option<String> {

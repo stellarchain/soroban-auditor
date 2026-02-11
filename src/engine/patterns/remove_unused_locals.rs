@@ -99,6 +99,7 @@ fn extract_decl_name(line: &str) -> Option<&str> {
 fn looks_like_temp_name(name: &str) -> bool {
     name.starts_with("var")
         || name.starts_with("slot_var")
+        || name.starts_with("sv")
         || name == "vec_builder"
         || name == "loaded_val"
 }

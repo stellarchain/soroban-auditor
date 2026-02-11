@@ -165,9 +165,6 @@ impl Pattern for ConversionEliminationPattern {
 
         for line in &block.body {
             let trimmed = line.trim();
-            let indent = line.len() - line.trim_start().len();
-            let indent_str = " ".repeat(indent);
-
             // Skip lines that already have TODO comments from previous iterations
             if trimmed.starts_with("// TODO:") {
                 new_body.push(line.clone());

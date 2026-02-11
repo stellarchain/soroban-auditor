@@ -1,7 +1,7 @@
 use crate::decompile::DataSegment;
 use crate::format::format_type_ident;
 use crate::forwarder::CallForwarder;
-use crate::soroban::contract::{ContractSpecs, FunctionContractSpec};
+use crate::sdk::soroban::contract::{ContractSpecs, FunctionContractSpec};
 use crate::wasm_ir::{Function, Global};
 use parity_wasm::elements::{
     CodeSection, ExportSection, FunctionSection, Instruction, Internal, Type, TypeSection,

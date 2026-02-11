@@ -47,7 +47,7 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
                 body,
                 footer,
             } => {
-                let mut new_body = rewrite(body, changed);
+                let new_body = rewrite(body, changed);
                 if let Some((cond, trimmed_body, keep_label)) = try_loop_to_while(&label, &new_body)
                 {
                     let indent = header

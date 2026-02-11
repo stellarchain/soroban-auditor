@@ -1,7 +1,9 @@
+#![allow(dead_code)]
+
 use crate::format::format_spec_tokens;
 use crate::forwarder::{collect_forwarder_args, CallForwarder};
 use crate::sdk::{get_backend, ContractSpecs, FunctionContractSpec};
-use crate::soroban::common::take_common_module;
+use crate::sdk::soroban::common::take_common_module;
 use crate::wasm_ir::{mangle_fn_name, to_rs_type, Function, Global};
 use parity_wasm::elements::{
     ExportSection, External, FunctionNameSubsection, ImportSection, Instruction, Module, Type,

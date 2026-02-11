@@ -4,7 +4,7 @@ use crate::forwarder::CallForwarder;
 use crate::wasm_ir::{
     mangle_fn_name, to_rs_type, BlockKind, Function, Global, Indentation,
 };
-use crate::{expr_builder::ExprBuilder, soroban::contract::FunctionContractSpec};
+use crate::{expr_builder::ExprBuilder, sdk::soroban::contract::FunctionContractSpec};
 use parity_wasm::elements::{BlockType, Instruction, TypeSection};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -220,7 +220,6 @@ pub fn build<W: Write>(
                 blocks.push(BlockKind::If {
                     label: if needs_label { Some(loop_count) } else { None },
                     dst_var,
-                    is_breakable,
                 });
                 if needs_label {
                     loop_count += 1;
@@ -272,7 +271,6 @@ pub fn build<W: Write>(
                     }
                     BlockKind::If {
                         dst_var,
-                        is_breakable,
                         label,
                     } => {
                         if let Some(dst_var) = dst_var {
@@ -456,6 +454,10 @@ pub fn build<W: Write>(
                     forwarders,
                     &mut tainted_bases,
                 );
+                // Calls may mutate linear-memory-backed frame slots, so cached slot
+                // aliases become stale after any call.
+                stack_slots_i32.clear();
+                stack_slots_i64.clear();
             }
             CallIndirect(type_index, _) => {
                 emit_call_indirect(
@@ -467,6 +469,8 @@ pub fn build<W: Write>(
                     types,
                     indirect_fns,
                 );
+                stack_slots_i32.clear();
+                stack_slots_i64.clear();
             }
             Drop => {
                 let (_, a) = expr_builder.pop().unwrap();

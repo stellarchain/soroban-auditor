@@ -48,8 +48,14 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
                 footer,
             } => {
                 let new_body = rewrite(body, changed);
-                if let Some(rewritten) = try_guard_if(&label, &header, &new_body) {
-                    out.extend(rewritten);
+                if let Some(rewritten_body) = try_guard_if(&label, &new_body) {
+                    out.push(Node::Block {
+                        kind: BlockKind::Other,
+                        label: Some(label),
+                        header,
+                        body: rewritten_body,
+                        footer,
+                    });
                     *changed = true;
                     continue;
                 }
@@ -83,9 +89,11 @@ fn rewrite(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
     out
 }
 
-fn try_guard_if(label: &str, header: &str, body: &[Node]) -> Option<Vec<Node>> {
+fn try_guard_if(label: &str, body: &[Node]) -> Option<Vec<Node>> {
     let mut guard_idx = None;
     let mut cond = String::new();
+    let mut then_without_break: Vec<Node> = Vec::new();
+    let mut if_indent = String::new();
 
     for (idx, node) in body.iter().enumerate() {
         match node {
@@ -97,44 +105,78 @@ fn try_guard_if(label: &str, header: &str, body: &[Node]) -> Option<Vec<Node>> {
                 body,
                 ..
             } => {
-                if !is_single_break_label(body, label) {
-                    return None;
+                if let Some(stripped_then) = strip_terminal_break_label(body, label) {
+                    cond = extract_if_condition(header)?;
+                    then_without_break = stripped_then;
+                    if_indent = header
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
+                    guard_idx = Some(idx);
+                    break;
                 }
-                cond = extract_if_condition(header)?;
-                guard_idx = Some(idx);
-                break;
+                continue;
             }
-            Node::Block { .. } => return None,
+            Node::Block { .. } => continue,
         }
     }
 
     let guard_idx = guard_idx?;
     let prefix = body[..guard_idx].to_vec();
-    let mut rest: Vec<Node> = body[guard_idx + 1..].to_vec();
-    if rest.is_empty() {
+    if contains_label_control(&prefix, label) {
         return None;
     }
-    if contains_label_control(&prefix, label) || contains_label_control(&rest, label) {
+    if contains_label_control(&then_without_break, label) {
         return None;
     }
+    let rest: Vec<Node> = body[guard_idx + 1..].to_vec();
+    let rewritten_tail = if rest.is_empty() {
+        rest
+    } else {
+        let mut nested = rest;
+        while let Some(next) = try_guard_if(label, &nested) {
+            nested = next;
+        }
+        nested
+    };
 
-    let indent = header
-        .chars()
-        .take_while(|c| c.is_whitespace())
-        .collect::<String>();
-    let new_header = format!("{indent}if !({cond}) {{");
-    let new_footer = format!("{indent}}}");
+    if then_without_break.iter().all(is_empty_line) {
+        let rewritten_if = Node::Block {
+            kind: BlockKind::If,
+            label: None,
+            header: format!("{if_indent}if !({cond}) {{"),
+            body: rewritten_tail,
+            footer: format!("{if_indent}}}"),
+        };
+
+        let mut rewritten = prefix;
+        rewritten.push(rewritten_if);
+        return Some(rewritten);
+    }
 
     let rewritten_if = Node::Block {
         kind: BlockKind::If,
         label: None,
-        header: new_header,
-        body: rest.drain(..).collect(),
-        footer: new_footer,
+        header: format!("{if_indent}if {cond} {{"),
+        body: then_without_break,
+        footer: format!("{if_indent}}}"),
     };
 
     let mut rewritten = prefix;
     rewritten.push(rewritten_if);
+    if !rewritten_tail.is_empty() {
+        rewritten.push(Node::Block {
+            kind: BlockKind::Else,
+            label: None,
+            header: format!("{if_indent}else {{"),
+            body: Vec::new(),
+            footer: format!("{if_indent}}}"),
+        });
+        // Replace placeholder to avoid cloning tail in the common case.
+        if let Some(Node::Block { body, .. }) = rewritten.last_mut() {
+            *body = rewritten_tail;
+        }
+    }
     Some(rewritten)
 }
 
@@ -147,19 +189,19 @@ fn extract_if_condition(header: &str) -> Option<String> {
     Some(inner["if ".len()..].trim().to_string())
 }
 
-fn is_single_break_label(body: &[Node], label: &str) -> bool {
-    let mut lines: Vec<String> = Vec::new();
-    for node in body {
-        match node {
-            Node::Line(line) => {
-                if !line.trim().is_empty() {
-                    lines.push(line.trim().to_string());
-                }
-            }
-            Node::Block { .. } => return false,
+fn strip_terminal_break_label(body: &[Node], label: &str) -> Option<Vec<Node>> {
+    let mut out = body.to_vec();
+    while let Some(last) = out.last() {
+        if is_empty_line(last) {
+            out.pop();
+            continue;
         }
+        break;
     }
-    lines.len() == 1 && lines[0] == format!("break '{};", label)
+    match out.pop() {
+        Some(Node::Line(line)) if line.trim() == format!("break '{};", label) => Some(out),
+        _ => None,
+    }
 }
 
 fn contains_label_control(nodes: &[Node], label: &str) -> bool {
@@ -181,4 +223,8 @@ fn contains_label_control(nodes: &[Node], label: &str) -> bool {
         }
     }
     false
+}
+
+fn is_empty_line(node: &Node) -> bool {
+    matches!(node, Node::Line(line) if line.trim().is_empty())
 }

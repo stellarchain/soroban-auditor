@@ -40,12 +40,15 @@ pub fn run_all(output: String, contract_name: &str) -> String {
     let output = cleanup_noop_identifier_statements(output);
     let output = cleanup_break_after_unreachable(output);
     let output = cleanup_dead_type_tag_guards(output);
+    let output = cleanup_vec_builder_append(output);
+    let output = cleanup_missing_loop_break_guard(output);
     let output = cleanup_guard_fallthrough_unreachable(output);
     let output = cleanup_terminal_return_unreachable(output);
     let output = cleanup_unused_let_bindings(output);
     let output = normalize_sdk_type_paths(output);
     let output = cleanup_trivial_if_shells_regex(output);
     let output = normalize_indentation(output);
+    let output = postprocess_remove_unused_methods(output, contract_name);
     // Keep the rest of postprocess as opt-in cosmetic cleanup.
     // Default path preserves code_builder output as-is.
     let enable_postprocess = std::env::var("SOROBAN_AUDITOR_ENABLE_POSTPROCESS").is_ok();
@@ -53,6 +56,166 @@ pub fn run_all(output: String, contract_name: &str) -> String {
         return output;
     }
     safe_cleanup(output, contract_name)
+}
+
+fn cleanup_vec_builder_append(output: String) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut skip_vec_builder_assign_from: Option<String> = None;
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if let Some(var_name) = &skip_vec_builder_assign_from {
+            if trimmed == format!("vec_builder = {};", var_name) {
+                skip_vec_builder_assign_from = None;
+                continue;
+            }
+            // Stop skipping once we move past the immediate assignment shape.
+            if !trimmed.is_empty() {
+                skip_vec_builder_assign_from = None;
+            }
+        }
+        if trimmed.contains("Vec::<Val>::from_val(env, &val_from_i64(vec_builder));")
+            && trimmed.contains("v.push_back(val_from_i64(")
+            && trimmed.contains("val_to_i64(v.into_val(env))")
+        {
+            let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
+            if let Some((lhs, rhs)) = trimmed
+                .strip_prefix("let ")
+                .and_then(|s| s.split_once(" = "))
+            {
+                let lhs = lhs.trim().to_string();
+                out.push(format!("{indent}vec_builder = {rhs}"));
+                skip_vec_builder_assign_from = Some(lhs);
+            } else {
+                out.push(format!("{indent}vec_builder = {trimmed}"));
+            }
+            continue;
+        }
+        out.push(line.to_string());
+    }
+    out.join("\n")
+}
+
+fn cleanup_missing_loop_break_guard(output: String) -> String {
+    let mut lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
+    let mut i = 0usize;
+    while i < lines.len() {
+        if lines[i].trim() != "loop {" {
+            i += 1;
+            continue;
+        }
+        let Some(end) = find_block_end_lines(&lines, i) else {
+            i += 1;
+            continue;
+        };
+        let inner_indent_len = lines[i].chars().take_while(|c| c.is_whitespace()).count() + 4;
+        let mut assign_idx: Option<usize> = None;
+        let mut if_idx: Option<usize> = None;
+        let mut var_name = String::new();
+        let mut limit_expr = String::new();
+        let mut has_top_control = false;
+
+        for idx in (i + 1)..end {
+            let line = &lines[idx];
+            let t = line.trim();
+            if t.is_empty() {
+                continue;
+            }
+            let indent_len = line.chars().take_while(|c| c.is_whitespace()).count();
+            if indent_len != inner_indent_len {
+                continue;
+            }
+            if t == "break;" || t == "continue;" || t.starts_with("break '") || t.starts_with("continue '")
+            {
+                has_top_control = true;
+                break;
+            }
+            if assign_idx.is_none() {
+                if let Some((lhs, _rhs)) = parse_simple_assignment_line(t) {
+                    assign_idx = Some(idx);
+                    var_name = lhs.to_string();
+                } else {
+                    break;
+                }
+                continue;
+            }
+            if if_idx.is_none() {
+                if let Some((lhs, rhs)) = parse_if_not_equal_header_line(t) {
+                    if lhs == var_name {
+                        if_idx = Some(idx);
+                        limit_expr = rhs.to_string();
+                    }
+                }
+                break;
+            }
+        }
+
+        if has_top_control || assign_idx.is_none() || if_idx.is_none() {
+            i = end + 1;
+            continue;
+        }
+
+        let assign_idx = assign_idx.unwrap_or(i + 1);
+        let if_idx = if_idx.unwrap_or(i + 2);
+        if if_idx != assign_idx + 1 {
+            i = end + 1;
+            continue;
+        }
+
+        let inner_indent = " ".repeat(inner_indent_len);
+        let guard_indent = format!("{inner_indent}    ");
+        lines.insert(if_idx, format!("{inner_indent}if {} == {} {{", var_name, limit_expr));
+        lines.insert(if_idx + 1, format!("{guard_indent}break;"));
+        lines.insert(if_idx + 2, format!("{inner_indent}}}"));
+        i = end + 4;
+    }
+    lines.join("\n")
+}
+
+fn parse_simple_assignment_line(t: &str) -> Option<(&str, &str)> {
+    if !t.ends_with(';') || !t.contains(" = ") {
+        return None;
+    }
+    let no_semi = t.trim_end_matches(';').trim();
+    let (lhs, rhs) = no_semi.split_once(" = ")?;
+    let lhs = lhs.trim();
+    if lhs.is_empty() || !lhs.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return None;
+    }
+    Some((lhs, rhs.trim()))
+}
+
+fn parse_if_not_equal_header_line(t: &str) -> Option<(&str, &str)> {
+    if !t.starts_with("if ") || !t.ends_with(" {") || !t.contains(" != ") {
+        return None;
+    }
+    let cond = t.strip_prefix("if ")?.strip_suffix(" {")?.trim();
+    let (lhs, rhs) = cond.split_once(" != ")?;
+    let lhs = lhs.trim();
+    let rhs = rhs.trim();
+    if lhs.is_empty() || rhs.is_empty() {
+        return None;
+    }
+    if !lhs.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return None;
+    }
+    Some((lhs, rhs))
+}
+
+fn find_block_end_lines(lines: &[String], start: usize) -> Option<usize> {
+    let mut depth = 0i32;
+    for (idx, line) in lines.iter().enumerate().skip(start) {
+        for ch in line.chars() {
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
+                depth -= 1;
+            }
+        }
+        if idx > start && depth == 0 {
+            return Some(idx);
+        }
+    }
+    None
 }
 
 fn cleanup_synthetic_single_pass_labels(output: String) -> String {
@@ -366,43 +529,64 @@ fn fix_match_break_without_loop(output: String) -> String {
     let mut lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
     let mut i = 0usize;
     while i < lines.len() {
-        if lines[i].trim() != "{" {
+        let trimmed = lines[i].trim().to_string();
+        if !(trimmed.starts_with("match ") && trimmed.ends_with('{')) {
             i += 1;
             continue;
         }
-        let Some(block_end) = find_brace_block_end(&lines, i) else {
+        let Some(match_end) = find_brace_block_end(&lines, i) else {
             i += 1;
             continue;
         };
-        if block_end <= i + 1 {
-            i = block_end.saturating_add(1);
+        if match_end <= i + 1 {
+            i = match_end.saturating_add(1);
             continue;
         }
 
-        let body = &lines[(i + 1)..block_end];
+        let body = &lines[(i + 1)..match_end];
         let mut has_break_match_arm = false;
-        let mut has_control_loop = false;
         for line in body {
             let t = line.trim();
             if t.contains("=> break,") {
                 has_break_match_arm = true;
             }
-            if t == "break;" || t == "continue;" || t.starts_with("break '") || t.starts_with("continue '") {
-                has_control_loop = true;
-            }
         }
 
-        if has_break_match_arm && !has_control_loop {
+        if has_break_match_arm && !is_inside_loop_before_line(&lines, i) {
             let indent = lines[i]
                 .chars()
                 .take_while(|c| c.is_whitespace())
                 .collect::<String>();
-            lines[i] = format!("{indent}loop {{");
+            lines.insert(i, format!("{indent}loop {{"));
+            lines.insert(match_end + 2, format!("{indent}}}"));
+            i = match_end + 3;
+            continue;
         }
 
-        i = block_end.saturating_add(1);
+        i = match_end.saturating_add(1);
     }
     lines.join("\n")
+}
+
+fn is_inside_loop_before_line(lines: &[String], target: usize) -> bool {
+    let mut depth: i32 = 0;
+    for line in lines.iter().take(target).rev() {
+        let trimmed = line.trim();
+        depth += trimmed.chars().filter(|&c| c == '}').count() as i32;
+        depth -= trimmed.chars().filter(|&c| c == '{').count() as i32;
+        if depth < 0 {
+            if trimmed.starts_with("loop ")
+                || trimmed == "loop {"
+                || trimmed.starts_with("while ")
+                || trimmed.starts_with("for ")
+                || (trimmed.starts_with('\'') && trimmed.ends_with(": loop {"))
+            {
+                return true;
+            }
+            depth = 0;
+        }
+    }
+    false
 }
 
 fn compact_match_equivalent_arms(output: String) -> String {
@@ -1367,4 +1551,42 @@ fn postprocess_remove_unused_top_level_helpers(output: String) -> String {
         out = remove_top_level_helper(&out, helper);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fix_match_break_without_loop;
+
+    #[test]
+    fn wraps_match_break_when_outside_loop() {
+        let input = [
+            "fn sample() {",
+            "    match x {",
+            "        0 | _ => break,",
+            "    }",
+            "}",
+        ]
+        .join("\n");
+
+        let output = fix_match_break_without_loop(input);
+        assert!(output.contains("    loop {"));
+        assert!(output.contains("match x {"));
+    }
+
+    #[test]
+    fn keeps_match_break_inside_loop() {
+        let input = [
+            "fn sample() {",
+            "    loop {",
+            "        match x {",
+            "            0 | _ => break,",
+            "        }",
+            "    }",
+            "}",
+        ]
+        .join("\n");
+
+        let output = fix_match_break_without_loop(input);
+        assert_eq!(output.matches("loop {").count(), 1);
+    }
 }

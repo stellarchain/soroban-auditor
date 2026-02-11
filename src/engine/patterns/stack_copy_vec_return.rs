@@ -199,6 +199,84 @@ impl Pattern for StackCopyVecReturnPattern {
             changed = true;
         }
 
+        // Generic fallback:
+        // `let t = { let mut v = Vec::<Val>::new(env); ... }; x = t; ... return x;`
+        // -> `return vec![&env, ...];`
+        let mut q = 0usize;
+        while q < new_body.len() {
+            let Some((tmp_name, raw_args)) = parse_vec_builder_args_line(new_body[q].trim()) else {
+                q += 1;
+                continue;
+            };
+            if raw_args.is_empty() {
+                q += 1;
+                continue;
+            }
+
+            let prefix_aliases = build_aliases_from_prefix(&new_body[..q]);
+            let resolved_args: Vec<String> = raw_args
+                .iter()
+                .map(|a| resolve_alias(a, &prefix_aliases))
+                .collect();
+
+            let mut assign_idx: Option<usize> = None;
+            let mut ret_target = tmp_name.clone();
+            for idx in (q + 1)..usize::min(new_body.len(), q + 4) {
+                if let Some((lhs, rhs)) = parse_simple_assignment(new_body[idx].trim()) {
+                    if rhs == tmp_name {
+                        assign_idx = Some(idx);
+                        ret_target = lhs;
+                        break;
+                    }
+                }
+            }
+
+            let mut ret_idx: Option<usize> = None;
+            let search_start = assign_idx.unwrap_or(q) + 1;
+            for idx in search_start..usize::min(new_body.len(), q + 14) {
+                if let Some(ret_name) = parse_simple_return(new_body[idx].trim()) {
+                    if ret_name == ret_target || ret_name == tmp_name {
+                        ret_idx = Some(idx);
+                    }
+                    break;
+                }
+            }
+            let Some(ret_idx) = ret_idx else {
+                q += 1;
+                continue;
+            };
+
+            let indent = new_body[ret_idx]
+                .chars()
+                .take_while(|c| c.is_whitespace())
+                .collect::<String>();
+            let items = resolved_args
+                .iter()
+                .map(|a| converter(a))
+                .collect::<Vec<_>>()
+                .join(", ");
+            new_body[ret_idx] = format!("{indent}return vec![&env, {items}];");
+
+            if let Some(aidx) = assign_idx {
+                new_body.remove(aidx);
+                if ret_idx > aidx {
+                    let adj = ret_idx - 1;
+                    if q < aidx {
+                        new_body.remove(q);
+                        let _ = adj - 1;
+                    } else {
+                        new_body.remove(q);
+                    }
+                } else {
+                    new_body.remove(q);
+                }
+            } else {
+                new_body.remove(q);
+            }
+            changed = true;
+            continue;
+        }
+
         if !changed {
             return None;
         }
@@ -229,11 +307,11 @@ fn find_slot_seeded_vec_return(lines: &[String]) -> Option<(String, String, usiz
             ret_line_idx = Some(i);
         }
         if let Some((lhs, rhs)) = parse_simple_assignment(t) {
-            if lhs.starts_with("slot_var") && lhs.ends_with("_0_i64") && rhs.ends_with(" as i64") {
+            if is_stack_slot_name(&lhs) && lhs.ends_with("_0_i64") && rhs.ends_with(" as i64") {
                 let base = lhs.trim_end_matches("_0_i64");
                 slot_base = Some(base.to_string());
                 slot0 = Some(rhs.trim_end_matches(" as i64").trim().to_string());
-            } else if lhs.starts_with("slot_var")
+            } else if is_stack_slot_name(&lhs)
                 && lhs.ends_with("_8_i64")
                 && rhs.ends_with(" as i64")
             {
@@ -288,6 +366,9 @@ fn detect_vec_element_converter(
             }
             if symbol_params.iter().any(|p| p == v) {
                 return v.to_string();
+            }
+            if is_bare_symbol_literal(v) {
+                return format!("Symbol::new(env, \"{}\")", v);
             }
             format!("Symbol::from_val(env, &val_from_i64({}))", v)
         }));
@@ -435,13 +516,17 @@ fn is_valid_vec_arg(arg: &str) -> bool {
     if arg.is_empty() {
         return false;
     }
-    if arg.starts_with("slot_var") {
+    if is_stack_slot_name(arg) {
         return false;
     }
     if arg.starts_with("vec_builder") {
         return false;
     }
     true
+}
+
+fn is_stack_slot_name(name: &str) -> bool {
+    name.starts_with("slot_var") || name.starts_with("sv")
 }
 
 fn is_known_in_prefix(arg: &str, prefix: &[String]) -> bool {
@@ -498,6 +583,35 @@ fn parse_vec_builder_assignment(line: &str) -> Option<(String, String, String)> 
         return None;
     }
     Some((tmp_name, args[0].clone(), args[1].clone()))
+}
+
+fn parse_vec_builder_args_line(line: &str) -> Option<(String, Vec<String>)> {
+    let (lhs, rhs) = line.strip_prefix("let ")?.split_once(" = ")?;
+    let tmp_name = lhs.trim().split(':').next()?.trim().to_string();
+    if !rhs.contains("let mut v = Vec::<Val>::new(env);") {
+        return None;
+    }
+    let mut args = Vec::new();
+    let mut rest = rhs;
+    while let Some(pos) = rest.find("v.push_back(val_from_i64(") {
+        let start = pos + "v.push_back(val_from_i64(".len();
+        let tail = &rest[start..];
+        let end = tail.find("))")?;
+        args.push(tail[..end].trim().to_string());
+        rest = &tail[end + 2..];
+    }
+    Some((tmp_name, args))
+}
+
+fn is_bare_symbol_literal(v: &str) -> bool {
+    let mut chars = v.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_ascii_uppercase() {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 fn parse_simple_assignment(line: &str) -> Option<(String, String)> {

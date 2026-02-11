@@ -1,5 +1,6 @@
 use crate::engine::function::FunctionBlock;
 use crate::engine::pattern::Pattern;
+use regex::Regex;
 
 pub struct ConstantMatchCleanupPattern;
 
@@ -45,20 +46,17 @@ impl Pattern for ConstantMatchCleanupPattern {
 }
 
 fn simplify_constant_match_line(line: &str) -> Option<String> {
-    let trimmed = line.trim();
-    if !trimmed.starts_with("match ") || !trimmed.contains(" { 0 => { ") {
-        return None;
-    }
-    let (prefix, rest) = split_once(trimmed, " { 0 => { ")?;
-    let selector = prefix.strip_prefix("match ")?.trim();
-    let selector_val = parse_selector(selector)?;
-
-    let (arm0, rest) = split_once(rest, " }, 1 => { ")?;
-    let (arm1, rest) = split_once(rest, " }, _ => { ")?;
-    let (arm_default, suffix) = split_once(rest, " } }")?;
-    if !suffix.trim().is_empty() && suffix.trim() != ";" {
-        return None;
-    }
+    let re = Regex::new(
+        r#"^(?P<indent>\s*)(?:(?P<prefix>let\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*))?match\s+(?P<sel>-?\d+)(?:\s*/\*.*?\*/)?\s*\{\s*0\s*=>\s*\{\s*(?P<a0>.*?)\s*\}\s*,\s*1\s*=>\s*\{\s*(?P<a1>.*?)\s*\}\s*,\s*_\s*=>\s*\{\s*(?P<ad>.*?)\s*\}\s*\}\s*;?\s*$"#,
+    )
+    .ok()?;
+    let caps = re.captures(line)?;
+    let indent = caps.name("indent").map(|m| m.as_str()).unwrap_or("");
+    let prefix = caps.name("prefix").map(|m| m.as_str()).unwrap_or("");
+    let selector_val = parse_selector(caps.name("sel")?.as_str())?;
+    let arm0 = caps.name("a0")?.as_str();
+    let arm1 = caps.name("a1")?.as_str();
+    let arm_default = caps.name("ad")?.as_str();
 
     let chosen = match selector_val {
         0 => arm0,
@@ -70,8 +68,7 @@ fn simplify_constant_match_line(line: &str) -> Option<String> {
         return None;
     }
 
-    let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
-    Some(format!("{indent}{chosen};"))
+    Some(format!("{indent}{prefix}{chosen};"))
 }
 
 fn parse_selector(s: &str) -> Option<i64> {
@@ -89,9 +86,3 @@ fn strip_trailing_zero(s: &str) -> &str {
     }
     t
 }
-
-fn split_once<'a>(s: &'a str, pat: &str) -> Option<(&'a str, &'a str)> {
-    let idx = s.find(pat)?;
-    Some((&s[..idx], &s[idx + pat.len()..]))
-}
-

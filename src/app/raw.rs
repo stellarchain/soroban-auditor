@@ -18,7 +18,7 @@ pub fn emit_raw_functions<W: Write>(
     indirect_fns: &mut BTreeMap<u32, Vec<(u32, u32)>>,
     spec_by_fn_index: &std::collections::HashMap<
         u32,
-        crate::soroban::contract::FunctionContractSpec,
+        crate::sdk::soroban::contract::FunctionContractSpec,
     >,
     data_segments: &[crate::decompile::DataSegment],
     forwarders: &std::collections::BTreeMap<u32, CallForwarder>,

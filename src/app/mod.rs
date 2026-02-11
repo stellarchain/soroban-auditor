@@ -29,11 +29,6 @@ pub struct Opt {
         help = "Use the names in the name section for the internal function names"
     )]
     use_name_section: bool,
-    #[structopt(
-        long = "sdk-report",
-        help = "Print detailed SDK usage report to stderr"
-    )]
-    sdk_report: bool,
     #[structopt(help = "Input file", parse(from_os_str))]
     input: PathBuf,
     #[structopt(

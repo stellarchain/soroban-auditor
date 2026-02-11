@@ -81,7 +81,9 @@ fn find_recent_slot_pair(lines: &[String], at: usize) -> Option<(String, String)
 
     for line in lines.iter().take(at).skip(start) {
         let trimmed = line.trim();
-        if !trimmed.starts_with("let mut slot_var") || !trimmed.contains(" = ") {
+        if !(trimmed.starts_with("let mut slot_var") || trimmed.starts_with("let mut sv"))
+            || !trimmed.contains(" = ")
+        {
             continue;
         }
         let lhs = trimmed

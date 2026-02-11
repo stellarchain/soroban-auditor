@@ -36,7 +36,6 @@ pub enum BlockKind {
     If {
         label: Option<usize>,
         dst_var: Option<String>,
-        is_breakable: bool,
     },
     Loop {
         label: Option<usize>,
@@ -99,6 +98,7 @@ pub fn mangle_fn_name(name: &str) -> String {
     s
 }
 
+#[allow(dead_code)]
 pub fn call_indirect_name(f: &FunctionType) -> String {
     let mut s = String::from("call_indirect_");
     for param in f.params() {

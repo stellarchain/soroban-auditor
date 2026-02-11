@@ -14,8 +14,6 @@ pub enum ForwarderType {
     TransformingForwarder,
     /// Unpacks struct/tuple then calls: GetLocal + field access + Call
     UnpackingForwarder,
-    /// Just wraps a constant: Const + Call
-    ConstantForwarder,
 }
 
 #[derive(Debug, Clone)]
@@ -23,7 +21,6 @@ pub struct ForwarderInfo {
     pub forwarder_type: ForwarderType,
     pub target_function: u32,
     pub complexity_score: usize,
-    pub instruction_count: usize,
     pub args: Vec<crate::forwarder::ForwardArg>,
 }
 
@@ -74,7 +71,6 @@ impl ForwarderAnalyzer {
             forwarder_type,
             target_function: target_call,
             complexity_score: complexity,
-            instruction_count: instrs.len(),
             args,
         })
     }
@@ -246,21 +242,6 @@ impl ForwarderAnalyzer {
 
         forwarders
     }
-
-    /// Check if a function should be inlined based on its complexity
-    pub fn should_inline(info: &ForwarderInfo) -> bool {
-        // Inline criteria:
-        // 1. Direct forwarders: always inline
-        // 2. Transforming forwarders: inline if simple (< 20 complexity)
-        // 3. Unpacking forwarders: inline if very simple (< 30 complexity)
-        // 4. Constant forwarders: always inline
-
-        match info.forwarder_type {
-            ForwarderType::DirectForwarder | ForwarderType::ConstantForwarder => true,
-            ForwarderType::TransformingForwarder => info.complexity_score < 20,
-            ForwarderType::UnpackingForwarder => info.complexity_score < 30,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -291,8 +272,6 @@ mod tests {
 
     #[test]
     fn test_forwarder_classification() {
-        let analyzer = ForwarderAnalyzer::new(10);
-
         // Direct forwarder
         let direct = vec![Instruction::GetLocal(0), Instruction::Call(5)];
         let ftype =

@@ -81,14 +81,12 @@ fn rewrite_storage_access(nodes: Vec<Node>, changed: &mut bool) -> Vec<Node> {
 }
 
 fn simplify_storage_line(line: &str, changed: &mut bool) -> String {
-    let mut result = line.to_string();
+    let result = line.to_string();
 
     // Pattern 1: env.storage().instance().get(&key).unwrap() → key direct sau helper
     if result.contains("env.storage().instance().get(") && result.contains(").unwrap()") {
         // Extractează key-ul
         if let Some(key) = extract_key_from_get(&result) {
-            let indent = get_indent(line);
-
             // Dacă e DataKey enum, păstrează pattern-ul simplu
             if key.starts_with("DataKey::") {
                 // Simplificare minimă - păstrează clar ce face
@@ -121,10 +119,6 @@ fn extract_key_from_get(line: &str) -> Option<String> {
         }
     }
     None
-}
-
-fn get_indent(line: &str) -> String {
-    line.chars().take_while(|c| c.is_whitespace()).collect()
 }
 
 #[cfg(test)]

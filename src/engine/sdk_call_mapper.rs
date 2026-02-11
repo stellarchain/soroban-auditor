@@ -18,11 +18,6 @@ enum MappingRule {
         method_name: String,
         receiver_arg: usize,
     },
-    /// Static method: vec_new() → Vec::new(env)
-    StaticMethod {
-        type_name: String,
-        method_name: String,
-    },
     /// Namespace call: bls12_381_g1_mul(a, b) → env.crypto().bls12_381().g1_mul(&a, &b)
     NamespaceCall {
         namespace: Vec<String>,
@@ -30,8 +25,6 @@ enum MappingRule {
     },
     /// Direct function: compute_hash_sha256(data) → env.crypto().compute_hash_sha256(data)
     DirectFunction { prefix: String },
-    /// Keep as-is
-    Passthrough,
 }
 
 impl SdkCallMapper {
@@ -230,12 +223,6 @@ impl SdkCallMapper {
                     format!("{}({})", sdk_function, args.join(", "))
                 }
             }
-            MappingRule::StaticMethod {
-                type_name,
-                method_name,
-            } => {
-                format!("{}::{}(env, {})", type_name, method_name, args.join(", "))
-            }
             MappingRule::NamespaceCall { namespace, method } => {
                 let ns_path = namespace
                     .iter()
@@ -261,9 +248,6 @@ impl SdkCallMapper {
             MappingRule::DirectFunction { prefix } => {
                 format!("env.{}().{}({})", prefix, sdk_function, args.join(", "))
             }
-            MappingRule::Passthrough => {
-                format!("{}({})", sdk_function, args.join(", "))
-            }
         }
     }
 
@@ -277,15 +261,6 @@ impl SdkCallMapper {
         }
     }
 
-    /// Check if a function is a known SDK function
-    pub fn is_sdk_function(&self, name: &str) -> bool {
-        self.detector.is_sdk_function(name)
-    }
-
-    /// Get info about an SDK function
-    pub fn get_function_info(&self, name: &str) -> Option<crate::sdk::SdkFunctionInfo> {
-        self.detector.get_by_name(name).cloned()
-    }
 }
 
 fn strip_numeric_suffix(name: &str) -> &str {
