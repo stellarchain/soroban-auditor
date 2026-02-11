@@ -30,6 +30,7 @@ pub fn run_all(output: String, contract_name: &str) -> String {
     let output = normalize_single_pass_guard_blocks(output);
     let output = compact_match_equivalent_arms(output);
     let output = fix_match_break_without_loop(output);
+    let output = cleanup_immediate_overwrite_assignments(output);
     let output = cleanup_redundant_negations(output);
     let output = cleanup_empty_condition_blocks(output);
     let output = cleanup_linear_loop_unreachable(output);
@@ -44,6 +45,7 @@ pub fn run_all(output: String, contract_name: &str) -> String {
     let output = cleanup_dead_type_tag_guards(output);
     let output = cleanup_vec_builder_append(output);
     let output = cleanup_missing_loop_break_guard(output);
+    let output = cleanup_noop_match_break_loops(output);
     let output = cleanup_loop_if_only_to_while(output);
     let output = cleanup_guard_fallthrough_unreachable(output);
     let output = cleanup_terminal_return_unreachable(output);
@@ -143,6 +145,63 @@ fn cleanup_loop_if_only_to_while(output: String) -> String {
     }
 
     lines.join("\n")
+}
+
+fn cleanup_noop_match_break_loops(output: String) -> String {
+    let mut lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
+    let mut i = 0usize;
+    while i < lines.len() {
+        if lines[i].trim() != "loop {" {
+            i += 1;
+            continue;
+        }
+        let Some(loop_end) = find_block_end(&lines, i) else {
+            i += 1;
+            continue;
+        };
+        if is_noop_match_break_loop(&lines[i + 1..loop_end]) {
+            lines.drain(i..=loop_end);
+            continue;
+        }
+        i = loop_end + 1;
+    }
+    lines.join("\n")
+}
+
+fn is_noop_match_break_loop(lines: &[String]) -> bool {
+    if lines.is_empty() {
+        return false;
+    }
+
+    let mut saw_match = false;
+    let mut saw_arm = false;
+    let mut depth = 0i32;
+
+    for line in lines {
+        let t = line.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if t.starts_with("match ") && t.ends_with('{') {
+            saw_match = true;
+            depth += 1;
+            continue;
+        }
+        if t == "}" {
+            if depth <= 0 {
+                return false;
+            }
+            depth -= 1;
+            continue;
+        }
+        if t.contains("=> break") {
+            saw_arm = true;
+            continue;
+        }
+        return false;
+    }
+
+    saw_match && saw_arm && depth == 0
 }
 
 fn find_block_end(lines: &[String], start: usize) -> Option<usize> {
@@ -758,9 +817,14 @@ fn fix_match_break_without_loop(output: String) -> String {
         let mut has_break_match_arm = false;
         for line in body {
             let t = line.trim();
-            if t.contains("=> break,") {
+            if t.contains("=> break,") || t.contains("=> break '") {
                 has_break_match_arm = true;
             }
+        }
+
+        if has_break_match_arm && is_noop_break_match_body(body) {
+            lines.drain(i..=match_end);
+            continue;
         }
 
         if has_break_match_arm && !is_inside_loop_before_line(&lines, i) {
@@ -777,6 +841,74 @@ fn fix_match_break_without_loop(output: String) -> String {
         i = match_end.saturating_add(1);
     }
     lines.join("\n")
+}
+
+fn is_noop_break_match_body(body: &[String]) -> bool {
+    let mut saw_arm = false;
+    for line in body {
+        let t = line.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if t == "}" {
+            continue;
+        }
+        if is_break_only_match_arm(t) {
+            saw_arm = true;
+            continue;
+        }
+        return false;
+    }
+    saw_arm
+}
+
+fn is_break_only_match_arm(t: &str) -> bool {
+    let Some((_, rhs)) = t.split_once("=>") else {
+        return false;
+    };
+    let rhs = rhs.trim().trim_end_matches(',');
+    if rhs == "break" {
+        return true;
+    }
+    if let Some(rest) = rhs.strip_prefix("break '") {
+        return rest
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == ';');
+    }
+    false
+}
+
+fn cleanup_immediate_overwrite_assignments(output: String) -> String {
+    let lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    let mut i = 0usize;
+    while i < lines.len() {
+        if i + 1 < lines.len() {
+            let cur = lines[i].trim();
+            let next = lines[i + 1].trim();
+            if let Some((lhs1, rhs1)) = parse_simple_assignment_line(cur) {
+                if let Some((lhs2, _rhs2)) = parse_simple_assignment_line(next) {
+                    if lhs1 == lhs2 && is_trivial_rhs(rhs1) {
+                        i += 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push(lines[i].clone());
+        i += 1;
+    }
+    out.join("\n")
+}
+
+fn is_trivial_rhs(rhs: &str) -> bool {
+    let r = rhs.trim();
+    if r.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ' ' || c == '(' || c == ')' || c == '-' || c == '+')
+    {
+        return true;
+    }
+    r.ends_with("/* True */") || r.ends_with("/* False */")
 }
 
 fn is_inside_loop_before_line(lines: &[String], target: usize) -> bool {

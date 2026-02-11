@@ -8,18 +8,19 @@ use crate::engine::patterns::{
     ElseCompactionPattern,
     FunctionSignaturePattern, GuardBlockBreaks, GuardBreakUnreachablePattern,
     IfChainToGuardsPattern, IfConditionCleanupPattern, I128DecodeSlotsPattern, I128SemanticPropagationPattern, InlineFrameBasePattern, InlineVecBuilderMacroPattern,
-    InlineValRoundtripPattern, IrLabelCleanup, LabelBlockCollapse, LabelGuardIf, LabelIfBreakToIfElsePattern, LabelMatchBreakGuard, LabelLoopIfContinueToWhilePattern, LabelLoopIfElseToWhilePattern, LabelTrapTailInlinePattern, LabeledSingleLoopBreakToWhilePattern,
+    InlineValRoundtripPattern, IrLabelCleanup, LabelBlockCollapse, LabelBreakTrapGuardPattern, LabelGuardIf, LabelIfBreakToIfElsePattern, LabelMatchBreakGuard, LabelLoopIfContinueToWhilePattern, LabelLoopIfElseToWhilePattern, LabelTrapTailInlinePattern, LabeledSingleLoopBreakToWhilePattern,
     LinearMemoryVecBuildPattern, RedundantTypeCheckPattern, RemoveTerminalReturnPattern,
     RemoveUnusedLocalsPattern,
     RemoveUnusedParamMutPattern,
     LoopComplementaryIfUnwrapPattern, LoopGuardChainToIf, LoopGuardToIf, LoopIfBreakTailToWhilePattern, LoopIfOnlyToWhileTextPattern, LoopIfUnreachableToBlock, LoopSingleIfToWhilePattern, LoopToWhile,
-    MathOperationsPattern, MissingSemicolonsPattern, MloadTempAssignFoldPattern, NextStringWhile,
+    ConstantGuardIfPattern, MathOperationsPattern, MissingSemicolonsPattern, MloadTempAssignFoldPattern, NextStringWhile,
+    NoopMatchLoopPattern,
     RedundantScopePattern,
     PruneEmptyIfBlocksPattern, ReturnVoidCleanupPattern, TerminalScopeUnwrapPattern,
     SerializeBytesFixPattern, SimpleLoopUnlabel, SinglePassLoopCleanup, SinglePassUnlabeledLoopCleanup, SmartVariableNamingPattern,
     StackCopyVecReturnPattern, StatusGuardBlockUnwrapPattern, StatusResultGuardLoopPattern, StatusResultGuardTextPattern, StorageAccessPattern, SymbolLiteralRecoveryPattern, TrailingUnreachableCleanupPattern,
     StatusResultGuardLabelPattern,
-    TypeTagGuardCleanupPattern, TypeTagGuardStripPattern, UnwrapTryFromValIfPattern, VmScaffoldCleanupPattern, WasmTypeGuardPrunePattern,
+    TypeTagGuardCleanupPattern, TypeTagGuardStripPattern, UnwrapTryFromValIfPattern, UnwrapTypeTagOkIfPattern, VmScaffoldCleanupPattern, WasmTypeGuardPrunePattern,
     VecBuilderAssignmentPattern,
     UnreachableCleanupPattern,
 };
@@ -132,6 +133,7 @@ fn register_cfg_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     patterns.push(Box::new(LabelLoopIfElseToWhilePattern::new()));
     patterns.push(Box::new(LoopIfBreakTailToWhilePattern::new()));
     patterns.push(Box::new(LabelTrapTailInlinePattern::new()));
+    patterns.push(Box::new(LabelBreakTrapGuardPattern::new()));
     // Disabled: can produce malformed guard if/else around labels in some contracts.
     // engine.register(LabelBlockTailGuard::new());
     // Disabled: may rewrite labeled guards into malformed detached else blocks.
@@ -163,6 +165,7 @@ fn register_cfg_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     patterns.push(Box::new(LoopIfOnlyToWhileTextPattern::new()));
     patterns.push(Box::new(LoopToWhile::new()));
     patterns.push(Box::new(SimpleLoopUnlabel::new()));
+    patterns.push(Box::new(NoopMatchLoopPattern::new()));
     patterns.push(Box::new(CopyPayloadPattern::new()));
     // Disabled: can over-compress label chains and lose guard branches in complex CFGs.
     // engine.register(LabelLadderInline::new());
@@ -210,9 +213,11 @@ fn register_cleanup_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     patterns.push(Box::new(TypeTagGuardStripPattern::new()));
     patterns.push(Box::new(WasmTypeGuardPrunePattern::new()));
     patterns.push(Box::new(UnwrapTryFromValIfPattern::new()));
+    patterns.push(Box::new(UnwrapTypeTagOkIfPattern::new()));
     patterns.push(Box::new(VmScaffoldCleanupPattern::new()));
     patterns.push(Box::new(GuardBreakUnreachablePattern::new()));
     patterns.push(Box::new(RedundantTypeCheckPattern::new()));
+    patterns.push(Box::new(ConstantGuardIfPattern::new()));
     patterns.push(Box::new(IfConditionCleanupPattern::new()));
     patterns.push(Box::new(IfChainToGuardsPattern::new()));
     patterns.push(Box::new(IfConditionCleanupPattern::new()));
