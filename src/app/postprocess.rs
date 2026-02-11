@@ -21,6 +21,8 @@ const TOP_LEVEL_HELPERS: &[&str] = &["address_from_i64", "err_contract", "val_to
 pub fn run_all(output: String, contract_name: &str) -> String {
     // Always prune unused top-level helpers; this is safe and keeps headers lean.
     let output = postprocess_remove_unused_top_level_helpers(output);
+    // Keep only imports that are actually needed by the generated output.
+    let output = prune_unused_soroban_imports(output);
     // Always normalize indentation; this is syntax-preserving and prevents drift
     // from upstream scope/unwrap transforms.
     let output = normalize_indentation(output);
@@ -42,11 +44,13 @@ pub fn run_all(output: String, contract_name: &str) -> String {
     let output = cleanup_dead_type_tag_guards(output);
     let output = cleanup_vec_builder_append(output);
     let output = cleanup_missing_loop_break_guard(output);
+    let output = cleanup_loop_if_only_to_while(output);
     let output = cleanup_guard_fallthrough_unreachable(output);
     let output = cleanup_terminal_return_unreachable(output);
     let output = cleanup_unused_let_bindings(output);
     let output = normalize_sdk_type_paths(output);
     let output = cleanup_trivial_if_shells_regex(output);
+    let output = add_blank_line_before_functions(output);
     let output = normalize_indentation(output);
     let output = postprocess_remove_unused_methods(output, contract_name);
     // Keep the rest of postprocess as opt-in cosmetic cleanup.
@@ -56,6 +60,211 @@ pub fn run_all(output: String, contract_name: &str) -> String {
         return output;
     }
     safe_cleanup(output, contract_name)
+}
+
+fn add_blank_line_before_functions(output: String) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
+
+    for line in lines {
+        let trimmed = line.trim();
+        let is_fn_start = trimmed.starts_with("fn ") || trimmed.starts_with("pub fn ");
+        if is_fn_start {
+            let prev_non_empty = out.iter().rev().find(|l| !l.trim().is_empty()).map(|s| s.trim());
+            let should_insert_blank = match prev_non_empty {
+                Some(prev) => prev != "{" && !prev.starts_with("#["),
+                None => false,
+            };
+            if should_insert_blank
+                && out.last().map(|l| !l.trim().is_empty()).unwrap_or(false)
+            {
+                out.push(String::new());
+            }
+        }
+        out.push(line);
+    }
+
+    out.join("\n")
+}
+
+fn cleanup_loop_if_only_to_while(output: String) -> String {
+    let mut lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
+    let mut i = 0usize;
+    while i < lines.len() {
+        if lines[i].trim() != "loop {" {
+            i += 1;
+            continue;
+        }
+        let Some(loop_end) = find_block_end(&lines, i) else {
+            i += 1;
+            continue;
+        };
+
+        let mut first_non_empty = None;
+        for (idx, line) in lines.iter().enumerate().take(loop_end).skip(i + 1) {
+            if !line.trim().is_empty() {
+                first_non_empty = Some(idx);
+                break;
+            }
+        }
+        let Some(if_start) = first_non_empty else {
+            i += 1;
+            continue;
+        };
+        let if_line = lines[if_start].trim().to_string();
+        if !if_line.starts_with("if ") || !if_line.ends_with(" {") {
+            i += 1;
+            continue;
+        }
+        let cond = if_line
+            .trim_start_matches("if ")
+            .trim_end_matches(" {")
+            .trim()
+            .to_string();
+        let Some(if_end) = find_block_end(&lines, if_start) else {
+            i += 1;
+            continue;
+        };
+        if if_end + 1 != loop_end {
+            i += 1;
+            continue;
+        }
+
+        let indent = leading_ws(&lines[i]);
+        let mut replacement = Vec::new();
+        replacement.push(format!("{indent}while {cond} {{"));
+        for line in lines.iter().take(if_end).skip(if_start + 1) {
+            replacement.push(dedent_line(line, 4));
+        }
+        replacement.push(format!("{indent}}}"));
+
+        lines.splice(i..=loop_end, replacement);
+        continue;
+    }
+
+    lines.join("\n")
+}
+
+fn find_block_end(lines: &[String], start: usize) -> Option<usize> {
+    let mut depth = 0i32;
+    let mut opened = false;
+    for (idx, line) in lines.iter().enumerate().skip(start) {
+        let opens = line.chars().filter(|&c| c == '{').count() as i32;
+        let closes = line.chars().filter(|&c| c == '}').count() as i32;
+        if opens > 0 {
+            opened = true;
+        }
+        depth += opens - closes;
+        if opened && depth == 0 {
+            return Some(idx);
+        }
+    }
+    None
+}
+
+fn leading_ws(line: &str) -> String {
+    line.chars().take_while(|c| c.is_whitespace()).collect()
+}
+
+fn dedent_line(line: &str, spaces: usize) -> String {
+    let mut consumed = 0usize;
+    for ch in line.chars() {
+        if ch == ' ' && consumed < spaces {
+            consumed += 1;
+        } else {
+            break;
+        }
+    }
+    line[consumed..].to_string()
+}
+
+fn prune_unused_soroban_imports(output: String) -> String {
+    let lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
+    let import_idx = lines
+        .iter()
+        .position(|l| l.trim_start().starts_with("use soroban_sdk::{"));
+    let Some(import_idx) = import_idx else {
+        return output;
+    };
+
+    let import_line = lines[import_idx].trim();
+    let prefix = "use soroban_sdk::{";
+    let suffix = "};";
+    if !(import_line.starts_with(prefix) && import_line.ends_with(suffix)) {
+        return output;
+    }
+
+    let items_raw = &import_line[prefix.len()..import_line.len() - suffix.len()];
+    let items: Vec<String> = items_raw
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
+    if items.is_empty() {
+        return output;
+    }
+
+    let body_text = lines
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != import_idx)
+        .map(|(_, l)| l.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut kept: Vec<String> = Vec::new();
+    for item in items {
+        if soroban_import_is_used(&body_text, &item) {
+            kept.push(item);
+        }
+    }
+    if kept.is_empty() {
+        return output;
+    }
+
+    let mut out = lines;
+    out[import_idx] = format!("use soroban_sdk::{{{}}};", kept.join(", "));
+    out.join("\n")
+}
+
+fn soroban_import_is_used(body: &str, item: &str) -> bool {
+    match item {
+        // Attribute macros
+        "contract" => body.contains("#[contract]"),
+        "contractimpl" => body.contains("#[contractimpl]"),
+        "contracttype" => body.contains("#[soroban_sdk::contracttype")
+            || body.contains("#[contracttype"),
+        "contractevent" => body.contains("#[soroban_sdk::contractevent")
+            || body.contains("#[contractevent"),
+
+        // Macro usage
+        "vec" => body.contains("vec!["),
+
+        // Trait-method driven imports
+        "IntoVal" => body.contains(".into_val(") || body.contains(" IntoVal"),
+        "FromVal" => body.contains("::from_val(") || body.contains(" FromVal"),
+        "TryFromVal" => body.contains("::try_from_val(") || body.contains(" TryFromVal"),
+
+        // Default token check with identifier boundaries
+        _ => contains_ident(body, item),
+    }
+}
+
+fn contains_ident(text: &str, ident: &str) -> bool {
+    let mut idx = 0usize;
+    while let Some(pos) = text[idx..].find(ident) {
+        let start = idx + pos;
+        let end = start + ident.len();
+        let bytes = text.as_bytes();
+        let left_ok = start == 0 || !is_ident_char(bytes[start - 1] as char);
+        let right_ok = end >= bytes.len() || !is_ident_char(bytes[end] as char);
+        if left_ok && right_ok {
+            return true;
+        }
+        idx = end;
+    }
+    false
 }
 
 fn cleanup_vec_builder_append(output: String) -> String {
@@ -290,9 +499,11 @@ fn cleanup_vm_frame_noise(output: String) -> String {
             let t = lines[idx].trim();
             if t == format!("self.global0 = {frame_var}.wrapping_add({frame_size});") {
                 restore_idx = Some(idx);
-                if idx + 1 < lines.len() && lines[idx + 1].trim().starts_with("return vec![&env,")
-                {
-                    ret_idx = Some(idx + 1);
+                if idx + 1 < lines.len() {
+                    let next = lines[idx + 1].trim();
+                    if next.starts_with("return ") || next == "return;" {
+                        ret_idx = Some(idx + 1);
+                    }
                 }
                 break;
             }
@@ -307,7 +518,7 @@ fn cleanup_vm_frame_noise(output: String) -> String {
         let mut semantic_uses_frame = false;
         for idx in (prologue_end + 1)..restore {
             let t = lines[idx].trim();
-            if t.contains(&frame_var) || t.contains("self.global0") {
+            if contains_ident(t, &frame_var) || t.contains("self.global0") {
                 semantic_uses_frame = true;
                 break;
             }
@@ -1555,7 +1766,7 @@ fn postprocess_remove_unused_top_level_helpers(output: String) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::fix_match_break_without_loop;
+    use super::{fix_match_break_without_loop, prune_unused_soroban_imports};
 
     #[test]
     fn wraps_match_break_when_outside_loop() {
@@ -1588,5 +1799,26 @@ mod tests {
 
         let output = fix_match_break_without_loop(input);
         assert_eq!(output.matches("loop {").count(), 1);
+    }
+
+    #[test]
+    fn prunes_unused_soroban_imports() {
+        let input = [
+            "#![no_std]",
+            "use soroban_sdk::{contract, contractimpl, Env, Vec, vec, Symbol, Val, Address, FromVal, IntoVal, Map, Bytes, BytesN, String};",
+            "#[contract]",
+            "pub struct C;",
+            "#[contractimpl]",
+            "impl C {",
+            "    pub fn hello(&mut self, env: Env, to: Symbol) -> Vec<Symbol> {",
+            "        vec![&env, Symbol::new(&env, \"Hello\"), to]",
+            "    }",
+            "}",
+        ]
+        .join("\n");
+        let output = prune_unused_soroban_imports(input);
+        assert!(output.contains("use soroban_sdk::{contract, contractimpl, Env, Vec, vec, Symbol};"));
+        assert!(!output.contains("Val,"));
+        assert!(!output.contains("Address,"));
     }
 }

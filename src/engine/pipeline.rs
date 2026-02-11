@@ -4,21 +4,22 @@ use crate::engine::preclean;
 use crate::engine::patterns::{
     BreakToLabelPattern, ConsolidateCommentsPattern, ConstantMatchCleanupPattern,
     ContinueBreakCleanup, CompactTempNamesPattern, CompoundAssignCleanupPattern, ConversionEliminationPattern, CopyPayloadPattern, CountedLoopPattern,
-    DeadTempCleanupPattern, DeduplicateVariablesPattern, EmptyIfBlockPattern, ForEachValPattern,
+    DeadTempCleanupPattern, DecodeStatusGuardPattern, DeduplicateVariablesPattern, EmptyIfBlockPattern, ForEachValPattern,
     ElseCompactionPattern,
     FunctionSignaturePattern, GuardBlockBreaks, GuardBreakUnreachablePattern,
-    IfChainToGuardsPattern, IfConditionCleanupPattern, InlineFrameBasePattern, InlineVecBuilderMacroPattern,
+    IfChainToGuardsPattern, IfConditionCleanupPattern, I128DecodeSlotsPattern, I128SemanticPropagationPattern, InlineFrameBasePattern, InlineVecBuilderMacroPattern,
     InlineValRoundtripPattern, IrLabelCleanup, LabelBlockCollapse, LabelGuardIf, LabelIfBreakToIfElsePattern, LabelMatchBreakGuard, LabelLoopIfContinueToWhilePattern, LabelLoopIfElseToWhilePattern, LabelTrapTailInlinePattern, LabeledSingleLoopBreakToWhilePattern,
     LinearMemoryVecBuildPattern, RedundantTypeCheckPattern, RemoveTerminalReturnPattern,
     RemoveUnusedLocalsPattern,
-    LoopGuardChainToIf, LoopGuardToIf, LoopIfBreakTailToWhilePattern, LoopIfUnreachableToBlock, LoopToWhile,
-    MathOperationsPattern, MissingSemicolonsPattern, NextStringWhile,
+    RemoveUnusedParamMutPattern,
+    LoopComplementaryIfUnwrapPattern, LoopGuardChainToIf, LoopGuardToIf, LoopIfBreakTailToWhilePattern, LoopIfOnlyToWhileTextPattern, LoopIfUnreachableToBlock, LoopSingleIfToWhilePattern, LoopToWhile,
+    MathOperationsPattern, MissingSemicolonsPattern, MloadTempAssignFoldPattern, NextStringWhile,
     RedundantScopePattern,
     PruneEmptyIfBlocksPattern, ReturnVoidCleanupPattern, TerminalScopeUnwrapPattern,
     SerializeBytesFixPattern, SimpleLoopUnlabel, SinglePassLoopCleanup, SinglePassUnlabeledLoopCleanup, SmartVariableNamingPattern,
-    StackCopyVecReturnPattern, StatusResultGuardLoopPattern, StatusResultGuardTextPattern, StorageAccessPattern, SymbolLiteralRecoveryPattern, TrailingUnreachableCleanupPattern,
+    StackCopyVecReturnPattern, StatusGuardBlockUnwrapPattern, StatusResultGuardLoopPattern, StatusResultGuardTextPattern, StorageAccessPattern, SymbolLiteralRecoveryPattern, TrailingUnreachableCleanupPattern,
     StatusResultGuardLabelPattern,
-    TypeTagGuardCleanupPattern, VmScaffoldCleanupPattern,
+    TypeTagGuardCleanupPattern, TypeTagGuardStripPattern, VmScaffoldCleanupPattern,
     VecBuilderAssignmentPattern,
     UnreachableCleanupPattern,
 };
@@ -134,6 +135,9 @@ fn register_cfg_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     // engine.register(GuardEarlyReturn::new());
     // engine.register(LoopUnreachableElse::new());
     patterns.push(Box::new(SinglePassUnlabeledLoopCleanup::new()));
+    patterns.push(Box::new(LoopComplementaryIfUnwrapPattern::new()));
+    patterns.push(Box::new(LoopSingleIfToWhilePattern::new()));
+    patterns.push(Box::new(LoopIfOnlyToWhileTextPattern::new()));
     patterns.push(Box::new(LoopToWhile::new()));
     patterns.push(Box::new(SimpleLoopUnlabel::new()));
     patterns.push(Box::new(CopyPayloadPattern::new()));
@@ -170,12 +174,17 @@ fn register_soroban_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
 fn register_cleanup_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     // Smart variable naming (now with single-pass protection)
     patterns.push(Box::new(SmartVariableNamingPattern::new()));
+    patterns.push(Box::new(DecodeStatusGuardPattern::new()));
+    patterns.push(Box::new(I128DecodeSlotsPattern::new()));
+    patterns.push(Box::new(I128SemanticPropagationPattern::new()));
+    patterns.push(Box::new(MloadTempAssignFoldPattern::new()));
     patterns.push(Box::new(CompactTempNamesPattern::new()));
     patterns.push(Box::new(DeduplicateVariablesPattern::new()));
     patterns.push(Box::new(InlineFrameBasePattern::new()));
     patterns.push(Box::new(StackCopyVecReturnPattern::new()));
     patterns.push(Box::new(SymbolLiteralRecoveryPattern::new()));
     patterns.push(Box::new(TypeTagGuardCleanupPattern::new()));
+    patterns.push(Box::new(TypeTagGuardStripPattern::new()));
     patterns.push(Box::new(VmScaffoldCleanupPattern::new()));
     patterns.push(Box::new(GuardBreakUnreachablePattern::new()));
     patterns.push(Box::new(RedundantTypeCheckPattern::new()));
@@ -200,10 +209,13 @@ fn register_cleanup_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     patterns.push(Box::new(ElseCompactionPattern::new()));
     patterns.push(Box::new(EmptyIfBlockPattern::new()));
     patterns.push(Box::new(PruneEmptyIfBlocksPattern::new()));
+    patterns.push(Box::new(LoopIfOnlyToWhileTextPattern::new()));
     patterns.push(Box::new(StatusResultGuardLoopPattern::new()));
     patterns.push(Box::new(StatusResultGuardLabelPattern::new()));
     patterns.push(Box::new(StatusResultGuardTextPattern::new()));
+    patterns.push(Box::new(StatusGuardBlockUnwrapPattern::new()));
     patterns.push(Box::new(FunctionSignaturePattern::new()));
+    patterns.push(Box::new(RemoveUnusedParamMutPattern::new()));
     patterns.push(Box::new(TrailingUnreachableCleanupPattern::new()));
 
     // Comment cleanup - MUST RUN LAST to consolidate all diagnostic comments

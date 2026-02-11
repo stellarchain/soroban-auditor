@@ -213,13 +213,6 @@ impl Pattern for SmartVariableNamingPattern {
             return None;
         }
 
-        // Check if already applied (prevent re-application in iterative mode)
-        for line in &block.body {
-            if line.contains("// Variables renamed by SmartVariableNamingPattern") {
-                return None; // Already applied
-            }
-        }
-
         let mut changed = false;
         let mut current_body = block.body.clone();
         let mut rename_map: HashMap<String, String> = HashMap::new();
@@ -259,16 +252,6 @@ impl Pattern for SmartVariableNamingPattern {
 
         if !changed {
             return None;
-        }
-
-        // Add marker comment at the start to prevent re-application
-        if !current_body.is_empty() {
-            let first_line_indent = current_body[0].len() - current_body[0].trim_start().len();
-            let marker = format!(
-                "{}// Variables renamed by SmartVariableNamingPattern",
-                " ".repeat(first_line_indent)
-            );
-            current_body.insert(0, marker);
         }
 
         Some(FunctionBlock {
