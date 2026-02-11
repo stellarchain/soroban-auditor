@@ -740,11 +740,9 @@ impl RandomContract1 {
         let mut d: i64 = 0;
         a = self.global0.wrapping_sub(48);
         self.global0 = a;
-        loop {
-            if b != 24 {
-                mstore64!(a.wrapping_add(8).wrapping_add(b) as usize, 0 /* Void */ as u64);
-                b = b.wrapping_add(8);
-            }
+        while b != 24 {
+            mstore64!(a.wrapping_add(8).wrapping_add(b) as usize, 0 /* Void */ as u64);
+            b = b.wrapping_add(8);
         }
         'label1: {
             'label2: {
@@ -1421,11 +1419,9 @@ impl RandomContract1 {
                     let h = val_to_i64(Vec::<Val>::from_val(env, &val_from_i64(svarg1_0_i64)).get_unchecked((c as u32 as i64).wrapping_shl(32 as u32) | 0 as u32));
                     e = h;
                     if Vec::<Val>::try_from_val(env, &val_from_i64(e)).is_ok() {
-                        loop {
-                            if a != 16 {
-                                mstore64!(a.wrapping_add(b) as usize, 0 /* Void */ as u64);
-                                a = a.wrapping_add(8);
-                            }
+                        while a != 16 {
+                            mstore64!(a.wrapping_add(b) as usize, 0 /* Void */ as u64);
+                            a = a.wrapping_add(8);
                         }
                         let i = 0;
                         d = mload64!(b as usize) as i64;
@@ -2341,25 +2337,23 @@ impl RandomContract1 {
                                                                                     o = a.wrapping_add(496);
                                                                                     j = a.wrapping_add(504);
                                                                                     'label48: {
-                                                                                        loop {
-                                                                                            if e != 0 {
-                                                                                                mstore8!(c as usize, 0 as u8);
-                                                                                                let mut sv3_480_i64 = mload64!(a as usize + 480) as i64;
-                                                                                                let mut sv5_1_i64 = sv3_480_i64 as i64;
-                                                                                                let mut sv13_0_i64 = mload64!(k as usize) as i64;
-                                                                                                mstore64!(c.wrapping_add(9) as usize, sv13_0_i64 as u64);
-                                                                                                let mut sv17_0_i64 = mload64!(o as usize) as i64;
-                                                                                                mstore64!(c.wrapping_add(17) as usize, sv17_0_i64 as u64);
-                                                                                                let mut sv12_0_i64 = mload64!(j as usize) as i64;
-                                                                                                mstore64!(c.wrapping_add(25) as usize, sv12_0_i64 as u64);
-                                                                                                e -= 1;
-                                                                                                c = c.wrapping_add(33);
-                                                                                            } else {
-                                                                                                s = g.wrapping_add(p);
-                                                                                                if b == 0 {
-                                                                                                    s -= 1;
-                                                                                                    break 'label48;
-                                                                                                }
+                                                                                        while e != 0 {
+                                                                                            mstore8!(c as usize, 0 as u8);
+                                                                                            let mut sv3_480_i64 = mload64!(a as usize + 480) as i64;
+                                                                                            let mut sv5_1_i64 = sv3_480_i64 as i64;
+                                                                                            let mut sv13_0_i64 = mload64!(k as usize) as i64;
+                                                                                            mstore64!(c.wrapping_add(9) as usize, sv13_0_i64 as u64);
+                                                                                            let mut sv17_0_i64 = mload64!(o as usize) as i64;
+                                                                                            mstore64!(c.wrapping_add(17) as usize, sv17_0_i64 as u64);
+                                                                                            let mut sv12_0_i64 = mload64!(j as usize) as i64;
+                                                                                            mstore64!(c.wrapping_add(25) as usize, sv12_0_i64 as u64);
+                                                                                            e -= 1;
+                                                                                            c = c.wrapping_add(33);
+                                                                                        } else {
+                                                                                            s = g.wrapping_add(p);
+                                                                                            if b == 0 {
+                                                                                                s -= 1;
+                                                                                                break 'label48;
                                                                                             }
                                                                                         }
                                                                                         mstore8!(c as usize, 0 as u8);
@@ -3069,14 +3063,12 @@ impl RandomContract1 {
                                                                             let gf = mload8!(a.wrapping_add(392).wrapping_add(d).wrapping_sub(2) as usize) as i32;
                                                                         }
                                                                     }
-                                                                    loop {
-                                                                        if c == e {
-                                                                            c = 0;
-                                                                        } else {
-                                                                            let gg = mload8!(a.wrapping_add(392).wrapping_add(c) as usize) as i32;
-                                                                            if gg == 0 {
-                                                                                c += 1;
-                                                                            }
+                                                                    while c == e {
+                                                                        c = 0;
+                                                                    } else {
+                                                                        let gg = mload8!(a.wrapping_add(392).wrapping_add(c) as usize) as i32;
+                                                                        if gg == 0 {
+                                                                            c += 1;
                                                                         }
                                                                     }
                                                                     if c as u32 <= e as u32 {
@@ -3755,13 +3747,11 @@ impl RandomContract1 {
                         break 'label0;
                     }
                 }
-                loop {
-                    if arg1 != 0 {
-                        let r = mload8!(arg2.wrapping_add(c) as usize) as i32;
-                        mstore8!(arg2.wrapping_add(e) as usize, r as u8);
-                        arg1 -= 1;
-                        arg2 += 1;
-                    }
+                while arg1 != 0 {
+                    let r = mload8!(arg2.wrapping_add(c) as usize) as i32;
+                    mstore8!(arg2.wrapping_add(e) as usize, r as u8);
+                    arg1 -= 1;
+                    arg2 += 1;
                 }
                 h = arg2.wrapping_add(b) += 1;
             }
@@ -5350,21 +5340,19 @@ impl RandomContract1 {
                                         arg1 = j.wrapping_add(g);
                                         a = g.wrapping_add(k);
                                         g = arg2.wrapping_add(g);
-                                        loop {
-                                            if e != 0 {
-                                                let mut svarg1_0_i64 = mload64!(arg1 as usize) as i64;
-                                                sv5_0_i64 = svarg1_0_i64 as i64;
-                                                let aj = mload64!(arg1.wrapping_add(24) as usize) as i64;
-                                                mstore64!(a.wrapping_add(24) as usize, aj as u64);
-                                                let ak = mload64!(arg1.wrapping_add(16) as usize) as i64;
-                                                mstore64!(a.wrapping_add(16) as usize, ak as u64);
-                                                let al = mload64!(arg1.wrapping_add(8) as usize) as i64;
-                                                mstore64!(a.wrapping_add(8) as usize, al as u64);
-                                                self.func74(env, g, a);
-                                                e -= 1;
-                                                arg1 = arg1.wrapping_add(32);
-                                                a = a.wrapping_add(32);
-                                            }
+                                        while e != 0 {
+                                            let mut svarg1_0_i64 = mload64!(arg1 as usize) as i64;
+                                            sv5_0_i64 = svarg1_0_i64 as i64;
+                                            let aj = mload64!(arg1.wrapping_add(24) as usize) as i64;
+                                            mstore64!(a.wrapping_add(24) as usize, aj as u64);
+                                            let ak = mload64!(arg1.wrapping_add(16) as usize) as i64;
+                                            mstore64!(a.wrapping_add(16) as usize, ak as u64);
+                                            let al = mload64!(arg1.wrapping_add(8) as usize) as i64;
+                                            mstore64!(a.wrapping_add(8) as usize, al as u64);
+                                            self.func74(env, g, a);
+                                            e -= 1;
+                                            arg1 = arg1.wrapping_add(32);
+                                            a = a.wrapping_add(32);
                                         }
                                         c += 1;
                                     }
@@ -5683,18 +5671,16 @@ impl RandomContract1 {
         let mut a: i32 = 0;
         let mut b: i32 = 0;
         let mut c: i32 = 0;
-        loop {
-            if a != 32 {
-                b = arg0.wrapping_add(a);
-                let d = mload8!(b as usize) as i32;
-                c = d;
-                let e = b;
-                b = arg1.wrapping_add(a);
-                let f = mload8!(b as usize) as i32;
-                mstore8!(e as usize, f as u8);
-                mstore8!(b as usize, c as u8);
-                a += 1;
-            }
+        while a != 32 {
+            b = arg0.wrapping_add(a);
+            let d = mload8!(b as usize) as i32;
+            c = d;
+            let e = b;
+            b = arg1.wrapping_add(a);
+            let f = mload8!(b as usize) as i32;
+            mstore8!(e as usize, f as u8);
+            mstore8!(b as usize, c as u8);
+            a += 1;
         }
     }
 
@@ -5792,19 +5778,17 @@ impl RandomContract1 {
         mstore64!(a.wrapping_add(24) as usize, 0 /* False */ as u64);
         mstore64!(a.wrapping_add(16) as usize, 0 /* False */ as u64);
         mstore64!(a.wrapping_add(8) as usize, 0 /* False */ as u64);
-        loop {
-            if b != 32 {
-                c = a.wrapping_add(b);
-                d = arg1.wrapping_add(b);
-                let g = mload8!(d as usize) as i32;
-                e = (g as u32).wrapping_shr(1 as u32) as i32;
-                mstore8!(c as usize, e as u8);
-                if b != 0 {
-                    let h = mload8!(d -= 1 as usize) as i32;
-                    mstore8!(c as usize, (h.wrapping_shl(7 as u32) | e) as u8);
-                }
-                b += 1;
+        while b != 32 {
+            c = a.wrapping_add(b);
+            d = arg1.wrapping_add(b);
+            let g = mload8!(d as usize) as i32;
+            e = (g as u32).wrapping_shr(1 as u32) as i32;
+            mstore8!(c as usize, e as u8);
+            if b != 0 {
+                let h = mload8!(d -= 1 as usize) as i32;
+                mstore8!(c as usize, (h.wrapping_shl(7 as u32) | e) as u8);
             }
+            b += 1;
         }
         let i = mload64!(a.wrapping_add(24) as usize) as i64;
         mstore64!(arg0.wrapping_add(24) as usize, i as u64);

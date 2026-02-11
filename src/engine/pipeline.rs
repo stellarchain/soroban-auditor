@@ -1,4 +1,4 @@
-use crate::engine::function::{join_functions, split_functions};
+use crate::engine::function::{join_functions, split_functions, FunctionBlock};
 use crate::engine::pattern::Pattern;
 use crate::engine::preclean;
 use crate::engine::patterns::{
@@ -19,14 +19,9 @@ use crate::engine::patterns::{
     SerializeBytesFixPattern, SimpleLoopUnlabel, SinglePassLoopCleanup, SinglePassUnlabeledLoopCleanup, SmartVariableNamingPattern,
     StackCopyVecReturnPattern, StatusGuardBlockUnwrapPattern, StatusResultGuardLoopPattern, StatusResultGuardTextPattern, StorageAccessPattern, SymbolLiteralRecoveryPattern, TrailingUnreachableCleanupPattern,
     StatusResultGuardLabelPattern,
-    TypeTagGuardCleanupPattern, TypeTagGuardStripPattern, VmScaffoldCleanupPattern,
+    TypeTagGuardCleanupPattern, TypeTagGuardStripPattern, UnwrapTryFromValIfPattern, VmScaffoldCleanupPattern, WasmTypeGuardPrunePattern,
     VecBuilderAssignmentPattern,
     UnreachableCleanupPattern,
-    RemoveMutSelfPattern,
-    RemoveUnnecessaryReturnPattern,
-    RemoveUnreachableEndPattern,
-    RemoveTypeTagChecksPattern,
-    EliminateStackFramePattern,
 };
 
 pub struct Engine {
@@ -67,8 +62,11 @@ impl Engine {
 
                 for pattern in &self.patterns {
                     if let Some(new_block) = pattern.apply(block) {
-                        *block = new_block;
-                        changed = true;
+                        // Safety gate: reject rewrites that break local block structure.
+                        if is_structurally_valid_block(&new_block) {
+                            *block = new_block;
+                            changed = true;
+                        }
                     }
                 }
 
@@ -85,6 +83,26 @@ impl Engine {
     fn preclean_input(&self, input: String) -> String {
         preclean::run(input)
     }
+}
+
+fn is_structurally_valid_block(block: &FunctionBlock) -> bool {
+    let mut depth: i32 = 0;
+    for line in std::iter::once(&block.header)
+        .chain(block.body.iter())
+        .chain(std::iter::once(&block.footer))
+    {
+        for ch in line.chars() {
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
+                depth -= 1;
+                if depth < 0 {
+                    return false;
+                }
+            }
+        }
+    }
+    depth == 0
 }
 
 pub fn default_engine() -> Engine {
@@ -177,12 +195,6 @@ fn register_soroban_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
 }
 
 fn register_cleanup_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
-    // NEW: Source-like code improvements - run early
-    patterns.push(Box::new(EliminateStackFramePattern::new()));  // MUST run first!
-    patterns.push(Box::new(RemoveMutSelfPattern::new()));
-    patterns.push(Box::new(RemoveTypeTagChecksPattern::new()));
-    patterns.push(Box::new(RemoveUnreachableEndPattern::new()));
-
     // Smart variable naming (now with single-pass protection)
     patterns.push(Box::new(SmartVariableNamingPattern::new()));
     patterns.push(Box::new(DecodeStatusGuardPattern::new()));
@@ -196,6 +208,8 @@ fn register_cleanup_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     patterns.push(Box::new(SymbolLiteralRecoveryPattern::new()));
     patterns.push(Box::new(TypeTagGuardCleanupPattern::new()));
     patterns.push(Box::new(TypeTagGuardStripPattern::new()));
+    patterns.push(Box::new(WasmTypeGuardPrunePattern::new()));
+    patterns.push(Box::new(UnwrapTryFromValIfPattern::new()));
     patterns.push(Box::new(VmScaffoldCleanupPattern::new()));
     patterns.push(Box::new(GuardBreakUnreachablePattern::new()));
     patterns.push(Box::new(RedundantTypeCheckPattern::new()));
@@ -214,7 +228,6 @@ fn register_cleanup_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     patterns.push(Box::new(RemoveUnusedLocalsPattern::new()));
     patterns.push(Box::new(DeadTempCleanupPattern::new()));
     patterns.push(Box::new(RemoveTerminalReturnPattern::new()));
-    patterns.push(Box::new(RemoveUnnecessaryReturnPattern::new()));
     patterns.push(Box::new(ReturnVoidCleanupPattern::new()));
     patterns.push(Box::new(UnreachableCleanupPattern::new()));
     patterns.push(Box::new(TerminalScopeUnwrapPattern::new()));
