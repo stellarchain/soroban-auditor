@@ -3,13 +3,13 @@ use crate::fingerprint::fingerprint_function;
 use crate::helper_semantics::infer_helper_name;
 use crate::semantic_resolver::resolver;
 use crate::sdk::{get_backend, ContractSpecs};
-use parity_wasm::deserialize_file;
+use parity_wasm::{deserialize_buffer, deserialize_file};
 use parity_wasm::elements::{
     ImportCountType, Section, Type,
 };
 use std::collections::BTreeMap;
 use std::collections::HashSet;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use structopt::StructOpt;
 
@@ -29,8 +29,16 @@ pub struct Opt {
         help = "Use the names in the name section for the internal function names"
     )]
     use_name_section: bool,
-    #[structopt(help = "Input file", parse(from_os_str))]
-    input: PathBuf,
+    #[structopt(help = "Read wasm payload from stdin instead of input file", long = "stdin-payload")]
+    stdin_payload: bool,
+    #[structopt(help = "Write generated output to stdout", long = "stdout")]
+    stdout: bool,
+    #[structopt(
+        help = "Input file",
+        parse(from_os_str),
+        required_unless = "stdin-payload"
+    )]
+    input: Option<PathBuf>,
     #[structopt(
         help = "Output file, stored next to wasm file if not specified",
         parse(from_os_str)
@@ -64,21 +72,75 @@ fn brace_counts(code: &str) -> (i32, i32) {
 }
 
 pub fn run(opt: Opt) -> Result<(), String> {
-    let input = opt.input;
-    let output_path = opt.output.unwrap_or_else(|| input.with_extension("rs"));
+    let (input_path, output_path) = if opt.stdin_payload {
+        if opt.output.is_some() {
+            return Err(
+                "When using --stdin-payload, provide at most one positional argument: [output]"
+                    .to_string(),
+            );
+        }
+        if opt.stdout && opt.input.is_some() {
+            return Err("When using --stdout, do not provide an output path".to_string());
+        }
+        let output_path = if opt.stdout {
+            None
+        } else {
+            Some(
+                opt.input
+                    .clone()
+                    .unwrap_or_else(|| PathBuf::from("output.rs")),
+            )
+        };
+        (None, output_path)
+    } else {
+        let input_path = opt
+            .input
+            .clone()
+            .ok_or_else(|| "Missing input file".to_string())?;
+        if opt.stdout && opt.output.is_some() {
+            return Err("When using --stdout, do not provide an output path".to_string());
+        }
+        let output_path = if opt.stdout {
+            None
+        } else {
+            Some(opt.output.unwrap_or_else(|| input_path.with_extension("rs")))
+        };
+        (Some(input_path), output_path)
+    };
     let sdk = get_backend();
     let modules = sdk
         .env_common_modules_result()
         .map_err(|err| format!("Error: {}", err))?;
-    let module = deserialize_file(&input).map_err(|err| format!("{}", err))?;
+    let module = if let Some(input) = input_path.as_ref() {
+        deserialize_file(input).map_err(|err| format!("{}", err))?
+    } else if opt.stdin_payload {
+        let mut bytes = Vec::new();
+        std::io::stdin()
+            .read_to_end(&mut bytes)
+            .map_err(|e| format!("Failed reading stdin: {}", e))?;
+        if bytes.is_empty() {
+            return Err("stdin payload is empty".to_string());
+        }
+        deserialize_buffer(&bytes).map_err(|err| format!("{}", err))?
+    } else {
+        return Err("Missing input file or --stdin-payload".to_string());
+    };
     let module = module.parse_names().unwrap_or_else(|(_, m)| m);
     let data_segments_with_offsets = extract_data_segments_with_offsets(&module);
 
     let mut writer: Vec<u8> = Vec::new();
-    let contract_name = utils::contract_name_from_module_or_path(&module, &input);
-    let contract_specs = match sdk.read_contract_specs(&input) {
-        Ok(specs) => specs,
-        Err(_err) => ContractSpecs::default(),
+    let contract_name = if let Some(input) = input_path.as_ref() {
+        utils::contract_name_from_module_or_path(&module, input)
+    } else {
+        utils::contract_name_from_module_or_path(&module, &PathBuf::from("stdin.wasm"))
+    };
+    let contract_specs = if let Some(input) = input_path.as_ref() {
+        match sdk.read_contract_specs(input) {
+            Ok(specs) => specs,
+            Err(_err) => ContractSpecs::default(),
+        }
+    } else {
+        ContractSpecs::default()
     };
     let is_account_contract = utils::is_account_contract(&contract_specs);
 
@@ -292,6 +354,12 @@ impl {contract_name} {"#
             "Unbalanced braces in generated output: {{={open_braces}, }}={close_braces}. Refusing to auto-fix."
         ));
     }
-    std::fs::write(output_path, output).map_err(|e| e.to_string())?;
+    if let Some(path) = output_path {
+        std::fs::write(path, output).map_err(|e| e.to_string())?;
+    } else {
+        std::io::stdout()
+            .write_all(output.as_bytes())
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
