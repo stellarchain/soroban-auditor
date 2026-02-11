@@ -35,11 +35,25 @@ impl Pattern for RemoveUnusedParamMutPattern {
                 if let Some((name_part, _ty_part)) = after_mut.split_once(':') {
                     let name = name_part.trim();
                     if !name.is_empty() && !is_reassigned(name, &block.body) {
-                        let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                        let indent = line
+                            .chars()
+                            .take_while(|c| c.is_whitespace())
+                            .collect::<String>();
                         out.push(format!("{indent}{after_mut}"));
                         changed = true;
                         continue;
                     }
+                }
+            } else if let Some((name_part, _ty_part)) = trimmed.split_once(':') {
+                let name = name_part.trim();
+                if is_plain_param_name(name) && is_reassigned(name, &block.body) {
+                    let indent = line
+                        .chars()
+                        .take_while(|c| c.is_whitespace())
+                        .collect::<String>();
+                    out.push(format!("{indent}mut {trimmed}"));
+                    changed = true;
+                    continue;
                 }
             }
 
@@ -61,7 +75,11 @@ impl Pattern for RemoveUnusedParamMutPattern {
 }
 
 fn is_reassigned(name: &str, body: &[String]) -> bool {
-    body.iter().any(|line| has_assignment_to_name(line, name))
+    body.iter().any(|line| {
+        has_assignment_to_name(line, name)
+            || line.contains(&format!("&mut {name}"))
+            || has_mutating_method_call(line, name)
+    })
 }
 
 fn has_assignment_to_name(line: &str, name: &str) -> bool {
@@ -104,6 +122,65 @@ fn has_assignment_to_name(line: &str, name: &str) -> bool {
 
 fn is_ident_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
+}
+
+fn has_mutating_method_call(line: &str, name: &str) -> bool {
+    let needle = format!("{name}.");
+    let mut idx = 0usize;
+    while let Some(pos) = line[idx..].find(&needle) {
+        let start = idx + pos;
+        if start > 0 {
+            let prev = line.as_bytes()[start - 1] as char;
+            if is_ident_char(prev) {
+                idx = start + needle.len();
+                continue;
+            }
+        }
+        let method_start = start + needle.len();
+        let rest = &line[method_start..];
+        let mut method = String::new();
+        for ch in rest.chars() {
+            if is_ident_char(ch) {
+                method.push(ch);
+            } else {
+                break;
+            }
+        }
+        if !method.is_empty() {
+            let after = &rest[method.len()..];
+            if after.trim_start().starts_with('(') && is_mutating_method_name(&method) {
+                return true;
+            }
+        }
+        idx = method_start;
+    }
+    false
+}
+
+fn is_plain_param_name(name: &str) -> bool {
+    !name.is_empty() && name.chars().all(is_ident_char)
+}
+
+fn is_mutating_method_name(method: &str) -> bool {
+    matches!(
+        method,
+        "push_back"
+            | "push_front"
+            | "pop_back"
+            | "pop_front"
+            | "append"
+            | "insert"
+            | "remove"
+            | "remove_unchecked"
+            | "set"
+            | "set_unchecked"
+            | "clear"
+            | "retain"
+            | "truncate"
+            | "shuffle"
+            | "sort"
+            | "sort_unstable"
+    )
 }
 
 #[cfg(test)]

@@ -225,7 +225,11 @@ pub fn run(opt: Opt) -> Result<(), String> {
 impl {contract_name} {"#
         .replace("{contract_name}", &contract_name);
     writeln!(writer, "{}", impl_block).map_err(|e| e.to_string())?;
-    let emit_raw_helpers = std::env::var("SOROBAN_AUDITOR_EMIT_RAW_FUNCTIONS").is_ok();
+    let emit_raw_helpers = if std::env::var("SOROBAN_AUDITOR_SKIP_RAW_FUNCTIONS").is_ok() {
+        false
+    } else {
+        true
+    };
 
     exports::emit_public_spec_functions(
         &mut writer,

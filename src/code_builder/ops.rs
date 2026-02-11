@@ -18,9 +18,11 @@ fn write_internal_call<W: Write>(
     name: &str,
     args: &[String],
     real_name: Option<&String>,
+    callee_is_public: bool,
 ) {
+    let env_arg = if callee_is_public { "env.clone()" } else { "env" };
     if args.len() <= 2 {
-        write!(writer, "self.{}(env", name).unwrap();
+        write!(writer, "self.{}({}", name, env_arg).unwrap();
         for expr in args {
             write!(writer, ", {}", expr).unwrap();
         }
@@ -33,7 +35,7 @@ fn write_internal_call<W: Write>(
     }
 
     writeln!(writer, "self.{}(", name).unwrap();
-    writeln!(writer, "{}    env,", indentation).unwrap();
+    writeln!(writer, "{}    {},", indentation, env_arg).unwrap();
     for expr in args {
         writeln!(writer, "{}    {},", indentation, expr).unwrap();
     }
@@ -114,7 +116,14 @@ pub(super) fn emit_call<W: Write>(
             writeln!(writer, ";").unwrap();
         }
     } else {
-        write_internal_call(writer, indentation, name, &args, real_name);
+        write_internal_call(
+            writer,
+            indentation,
+            name,
+            &args,
+            real_name,
+            function.make_public,
+        );
     }
 
     for _ in fn_type.results() {

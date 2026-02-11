@@ -62,11 +62,9 @@ pub fn emit_public_spec_functions<W: Write>(
                 }
             }
 
-            let env_mut = assigned_params.get(0).copied().unwrap_or(false);
-            let env_param = if env_mut { "mut env: Env" } else { "env: Env" };
             writeln!(writer, "    pub fn {}(", ctx_data.export_name).map_err(|e| e.to_string())?;
             writeln!(writer, "        &mut self,").map_err(|e| e.to_string())?;
-            writeln!(writer, "        {},", env_param).map_err(|e| e.to_string())?;
+            writeln!(writer, "        env: Env,").map_err(|e| e.to_string())?;
             for (idx, argument) in spec_fn.inputs().iter().enumerate() {
                 let ty = format_type_ident(&argument.type_ident().to_string());
                 let is_mut = assigned_params.get(idx + 1).copied().unwrap_or(false);
