@@ -20,6 +20,8 @@ impl Pattern for ReturnVoidCleanupPattern {
         }
 
         let is_unit_return = !block.header.contains("->");
+        let top_level_indent = format!("{}    ", block.indent);
+        let last_non_empty = block.body.iter().rposition(|line| !line.trim().is_empty());
         let mut changed = false;
         let mut out: Vec<String> = Vec::with_capacity(block.body.len());
         let mut i = 0usize;
@@ -31,6 +33,16 @@ impl Pattern for ReturnVoidCleanupPattern {
             if is_unit_return && trimmed == "return 0 /* Void */;" {
                 let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
                 out.push(format!("{indent}return;"));
+                changed = true;
+                i += 1;
+                continue;
+            }
+
+            if is_unit_return
+                && Some(i) == last_non_empty
+                && line.starts_with(&top_level_indent)
+                && (trimmed == "0 /* Void */" || trimmed == "0 /* Void */;")
+            {
                 changed = true;
                 i += 1;
                 continue;

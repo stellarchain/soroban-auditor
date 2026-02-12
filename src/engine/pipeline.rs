@@ -10,6 +10,7 @@ use crate::engine::patterns::{
     IfChainToGuardsPattern, IfConditionCleanupPattern, I128DecodeSlotsPattern, I128PartsCallUnpackPattern, I128PairUnpackPattern, I128SemanticPropagationPattern, InlineFrameBasePattern, InlineVecBuilderMacroPattern,
     I32FlagIfSimplifyPattern, I32FlagInlineIfPropagatePattern, InlineGeneratedSingleUseLetPattern, InlineIfAssignUnwrapPattern, InlineSingleUseAliasPattern, InlineStatusMloadGuardPattern, InlineValRoundtripPattern, IrLabelCleanup, LabelBlockCollapse, LabelBreakTrapGuardPattern, LabelGuardIf, LabelIfBreakToIfElsePattern, LabelMatchBreakGuard, LabelLoopIfContinueToWhilePattern, LabelLoopIfElseToWhilePattern, LabelTerminalBreakCleanupPattern, LabelTrapTailInlinePattern, LabeledSingleLoopBreakToWhilePattern,
     LinearMemoryVecBuildPattern, RedundantTypeCheckPattern, RemoveTerminalReturnPattern,
+    InitReassignFoldPattern, UnusedLetSideEffectPreservePattern,
     RemoveUnusedLocalsPattern,
     RemoveUnusedLocalMutPattern,
     RemoveUnusedParamMutPattern,
@@ -19,6 +20,8 @@ use crate::engine::patterns::{
     RedundantScopePattern,
     PruneEmptyIfBlocksPattern, ReturnVoidCleanupPattern, TerminalScopeUnwrapPattern,
     SerializeBytesFixPattern, SimpleLoopUnlabel, SinglePassLoopCleanup, SinglePassUnlabeledLoopCleanup, SmartVariableNamingPattern,
+    LiteralCommentCleanupPattern,
+    ShiftByZeroCleanupPattern,
     StackCopyVecReturnPattern, StatusGuardBlockUnwrapPattern, StatusResultGuardLoopPattern, StatusResultGuardTextPattern, StorageAccessPattern, SymbolLiteralRecoveryPattern, TrailingUnreachableCleanupPattern,
     StatusIfNe1ToGuardPattern, StatusResultGuardLabelPattern,
     TypeTagGuardCleanupPattern, TypeTagGuardStripPattern, UnwrapTryFromValIfPattern, UnwrapTypeTagOkIfPattern, VmScaffoldCleanupPattern, WasmTypeGuardPrunePattern,
@@ -254,6 +257,7 @@ fn register_cleanup_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     patterns.push(Box::new(ExtractIfMload32GuardPattern::new()));
     patterns.push(Box::new(ExtractIfMload64ExprPattern::new()));
     patterns.push(Box::new(ExtractInlineMloadValArgPattern::new()));
+    patterns.push(Box::new(InitReassignFoldPattern::new()));
     patterns.push(Box::new(InlineIfAssignUnwrapPattern::new()));
     patterns.push(Box::new(I32FlagInlineIfPropagatePattern::new()));
     patterns.push(Box::new(I32FlagIfSimplifyPattern::new()));
@@ -261,11 +265,13 @@ fn register_cleanup_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     patterns.push(Box::new(VecBuilderAssignmentPattern::new()));
     patterns.push(Box::new(InlineVecBuilderMacroPattern::new()));
     patterns.push(Box::new(SerializeBytesFixPattern::new()));
+    patterns.push(Box::new(ShiftByZeroCleanupPattern::new()));
     patterns.push(Box::new(CompoundAssignCleanupPattern::new()));
     patterns.push(Box::new(RedundantScopePattern::new()));
     patterns.push(Box::new(RemoveUnusedLocalsPattern::new()));
     patterns.push(Box::new(RemoveUnusedLocalMutPattern::new()));
     patterns.push(Box::new(DeadLetPureCleanupPattern::new()));
+    patterns.push(Box::new(UnusedLetSideEffectPreservePattern::new()));
     patterns.push(Box::new(DeadTempCleanupPattern::new()));
     patterns.push(Box::new(RemoveTerminalReturnPattern::new()));
     patterns.push(Box::new(ReturnVoidCleanupPattern::new()));
@@ -280,6 +286,7 @@ fn register_cleanup_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     patterns.push(Box::new(StatusResultGuardTextPattern::new()));
     patterns.push(Box::new(StatusGuardBlockUnwrapPattern::new()));
     patterns.push(Box::new(StatusIfNe1ToGuardPattern::new()));
+    patterns.push(Box::new(LiteralCommentCleanupPattern::new()));
     patterns.push(Box::new(FunctionSignaturePattern::new()));
     patterns.push(Box::new(RemoveUnusedParamMutPattern::new()));
     patterns.push(Box::new(TrailingUnreachableCleanupPattern::new()));
