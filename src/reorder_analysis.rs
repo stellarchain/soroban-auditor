@@ -249,6 +249,18 @@ pub fn can_local_be_reordered(
             | F64Add | F64Sub | F64Mul | F64Div | F64Min | F64Max | F64Copysign => {
                 position_on_stack -= 1;
             }
+            Instruction::Bulk(ref bulk) => {
+                use parity_wasm::elements::BulkInstruction::*;
+                match bulk {
+                    MemoryInit(_) | MemoryFill | MemoryCopy | TableInit(_) | TableCopy => {
+                        position_on_stack -= 3;
+                        if position_on_stack < 0 {
+                            return true;
+                        }
+                    }
+                    MemoryDrop(_) | TableDrop(_) => {}
+                }
+            }
         }
     }
 

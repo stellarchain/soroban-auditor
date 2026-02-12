@@ -133,6 +133,7 @@ pattern_test!(
 );
 pattern_test!(pattern_missing_semicolons, MissingSemicolonsPattern);
 pattern_test!(pattern_storage_access, StorageAccessPattern);
+pattern_test!(pattern_literal_comment_cleanup, LiteralCommentCleanupPattern);
 pattern_test!(pattern_math_operations, MathOperationsPattern);
 pattern_test!(pattern_linear_memory_vec_build, LinearMemoryVecBuildPattern);
 pattern_test!(pattern_constant_match_cleanup, ConstantMatchCleanupPattern);
@@ -151,9 +152,15 @@ pattern_test!(pattern_redundant_type_check, RedundantTypeCheckPattern);
 pattern_test!(pattern_if_condition_cleanup, IfConditionCleanupPattern);
 pattern_test!(pattern_if_chain_to_guards, IfChainToGuardsPattern);
 pattern_test!(pattern_inline_val_roundtrip, InlineValRoundtripPattern);
+pattern_test!(pattern_init_reassign_fold, InitReassignFoldPattern);
 pattern_test!(pattern_vec_builder_assignment, VecBuilderAssignmentPattern);
 pattern_test!(pattern_inline_vec_builder_macro, InlineVecBuilderMacroPattern);
 pattern_test!(pattern_serialize_bytes_fix, SerializeBytesFixPattern);
+pattern_test!(
+    pattern_unused_let_side_effect_preserve,
+    UnusedLetSideEffectPreservePattern
+);
+pattern_test!(pattern_shift_by_zero_cleanup, ShiftByZeroCleanupPattern);
 pattern_test!(pattern_compound_assign_cleanup, CompoundAssignCleanupPattern);
 pattern_test!(pattern_redundant_scope, RedundantScopePattern);
 pattern_test!(pattern_remove_unused_locals, RemoveUnusedLocalsPattern);

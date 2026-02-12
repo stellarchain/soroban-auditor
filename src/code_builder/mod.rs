@@ -1643,6 +1643,20 @@ pub fn build<W: Write>(
                     format!("f64::from_bits({} as u64)", a)
                 });
             }
+            Instruction::Bulk(ref bulk) => {
+                use parity_wasm::elements::BulkInstruction::*;
+                match bulk {
+                    MemoryInit(_) | MemoryCopy | MemoryFill | TableInit(_) | TableCopy => {
+                        let _ = expr_builder.pop();
+                        let _ = expr_builder.pop();
+                        let _ = expr_builder.pop();
+                        writeln!(writer, "{}/* bulk op: {} */", indentation, bulk).unwrap();
+                    }
+                    MemoryDrop(_) | TableDrop(_) => {
+                        writeln!(writer, "{}/* bulk op: {} */", indentation, bulk).unwrap();
+                    }
+                }
+            }
         }
         instr_index += 1;
     }

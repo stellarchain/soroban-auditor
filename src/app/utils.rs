@@ -101,46 +101,12 @@ pub struct StructDef {
     pub fields: Vec<StructField>,
 }
 
-pub fn contract_name_from_module(module: &Module) -> String {
-    module
-        .names_section()
-        .and_then(|names| names.module())
-        .map(|module_name| mangle_fn_name(module_name.name()))
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "Contract".to_string())
+pub fn contract_name_from_module(_module: &Module) -> String {
+    "SorobanContract".to_string()
 }
 
-pub fn contract_name_from_module_or_path(module: &Module, input: &Path) -> String {
-    let module_name = contract_name_from_module(module);
-    if module_name != "Contract" {
-        return module_name;
-    }
-    let stem = input
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or_default();
-    let mut name = stem.to_string();
-    if let Some(rest) = name.strip_prefix("soroban_") {
-        name = rest.to_string();
-    }
-    let mut out = String::new();
-    for part in name.split(|c: char| c == '_' || c == '-') {
-        if part.is_empty() {
-            continue;
-        }
-        let mut chars = part.chars();
-        if let Some(first) = chars.next() {
-            out.push(first.to_ascii_uppercase());
-            for ch in chars {
-                out.push(ch);
-            }
-        }
-    }
-    if out.is_empty() {
-        "Contract".to_string()
-    } else {
-        out
-    }
+pub fn contract_name_from_module_or_path(_module: &Module, _input: &Path) -> String {
+    "SorobanContract".to_string()
 }
 
 pub fn spec_type_flags(contract_specs: &ContractSpecs) -> SpecTypeFlags {
