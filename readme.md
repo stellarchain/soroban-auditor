@@ -21,6 +21,12 @@ Useful option:
 cargo run --bin soroban-auditor -- --use-name-section <input.wasm> [output.rs]
 ```
 
+Security scan for common smart-contract WASM issues:
+
+```bash
+cargo run --bin security-analyze -- <input.wasm> --detailed
+```
+
 Write generated code to stdout:
 
 ```bash

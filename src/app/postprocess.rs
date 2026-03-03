@@ -61,6 +61,11 @@ pub fn run_all(output: String, contract_name: &str) -> String {
     let output = cleanup_signature_empty_param_lines(output);
     let output = cleanup_global0_boilerplate(output);
     let output = cleanup_empty_impl_blocks(output);
+    let output = fix_let_match_semicolons(output);
+    let output = parenthesize_cast_comparisons(output);
+    let output = rename_func_numbers(output);
+    let output = strip_offset_numbers(output);
+    let output = fix_env_borrowing(output);
     // Keep the rest of postprocess as opt-in cosmetic cleanup.
     // Default path preserves code_builder output as-is.
     let enable_postprocess = std::env::var("SOROBAN_AUDITOR_ENABLE_POSTPROCESS").is_ok();
@@ -136,6 +141,505 @@ fn cleanup_empty_impl_blocks(output: String) -> String {
     }
     out.join("\n")
 }
+
+/// Add missing semicolons after let-binding `match` expressions when they are
+/// generated on a single line.
+fn fix_let_match_semicolons(output: String) -> String {
+    let mut out = Vec::new();
+    for line in output.lines() {
+        let mut s = line.to_string();
+        if s.trim_start().starts_with("let ") && s.contains("= match") && !s.trim_end().ends_with(';') {
+            // append semicolon after final closing brace
+            if let Some(pos) = s.rfind('}') {
+                if pos == s.len()-1 || s[pos+1..].trim().is_empty() {
+                    s.push(';');
+                }
+            }
+        }
+        out.push(s);
+    }
+    out.join("\n")
+}
+
+/// Wrap cast expressions in parentheses when used in comparisons to avoid
+/// being parsed as generic argument notation.
+fn parenthesize_cast_comparisons(output: String) -> String {
+    let re = Regex::new(r"(?P<expr>\b\w+\s+as\s+[A-Za-z0-9_:<>]+)\s*([<>])").unwrap();
+    let mut out = Vec::new();
+    for line in output.lines() {
+        let new_line = re.replace_all(line, |caps: &regex::Captures| {
+            let expr = &caps["expr"];
+            let op = &caps[2];
+            format!("({}) {}", expr.trim(), op)
+        });
+        out.push(new_line.to_string());
+    }
+    out.join("\n")
+}
+
+// === auto-renaming helpers ===
+
+/// Replace sequential `funcNN` names with `helper_X` to avoid nonsensical numbers.
+fn rename_func_numbers(output: String) -> String {
+    let re_fn = Regex::new(r"fn func(\d+)").unwrap();
+    let mut mapping = std::collections::HashMap::new();
+    let mut counter = 0;
+    let mut lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
+    let mut i = 0;
+
+    // helper closure to collect a function's body text given starting index
+    let collect_body = |lines: &[String], start: usize| -> (usize, String) {
+        let mut depth = 0;
+        let mut j = start;
+        // advance until we've seen the opening brace
+        while j < lines.len() {
+            depth += lines[j].chars().filter(|&c| c == '{').count() as i32;
+            depth -= lines[j].chars().filter(|&c| c == '}').count() as i32;
+            j += 1;
+            if depth > 0 {
+                break;
+            }
+        }
+        // now consume until depth returns to zero (end of function)
+        while depth > 0 && j < lines.len() {
+            depth += lines[j].chars().filter(|&c| c == '{').count() as i32;
+            depth -= lines[j].chars().filter(|&c| c == '}').count() as i32;
+            j += 1;
+        }
+        let end = if j == 0 { start } else { j - 1 };
+        let body = lines[start..=end].join("\n");
+        (end, body)
+    };
+
+    while i < lines.len() {
+        if let Some(cap) = re_fn.captures(&lines[i]) {
+            let num = cap[1].to_string();
+            let start = i;
+            let (end, body) = collect_body(&lines, start);
+            i = end; // advance to end of function
+            let sem_name = detect_semantic_helper_name(&body);
+            let name = sem_name.clone().unwrap_or_else(|| {
+                let s = format!("helper_{}", counter);
+                counter += 1;
+                s
+            });
+            if let Some(ref sem) = sem_name {
+                eprintln!("renaming func{} to semantic name {}", num, sem);
+            }
+            mapping.insert(num.clone(), name);
+        }
+        i += 1;
+    }
+    let mut out = output;
+    for (num, name) in &mapping {
+        let re_all = Regex::new(&format!(r"\bfunc{}\b", num)).unwrap();
+        out = re_all.replace_all(&out, name.as_str()).to_string();
+    }
+    // second pass: existing helper_N functions may now be present (or persisted from a
+    // previous run).  try to give them semantic names as well.
+    let re_helper = Regex::new(r"fn helper_(\d+)").unwrap();
+    let mut lines: Vec<String> = out.lines().map(|l| l.to_string()).collect();
+    let mut i = 0;
+    let mut helper_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    // reuse same body collection closure from above by re-defining locally
+    let collect_body = |lines: &[String], start: usize| -> (usize, String) {
+        let mut depth = 0;
+        let mut j = start;
+        while j < lines.len() {
+            depth += lines[j].chars().filter(|&c| c == '{').count() as i32;
+            depth -= lines[j].chars().filter(|&c| c == '}').count() as i32;
+            j += 1;
+            if depth > 0 {
+                break;
+            }
+        }
+        while depth > 0 && j < lines.len() {
+            depth += lines[j].chars().filter(|&c| c == '{').count() as i32;
+            depth -= lines[j].chars().filter(|&c| c == '}').count() as i32;
+            j += 1;
+        }
+        let end = if j == 0 { start } else { j - 1 };
+        let body = lines[start..=end].join("\n");
+        (end, body)
+    };
+    while i < lines.len() {
+        if let Some(cap) = re_helper.captures(&lines[i]) {
+            let num = cap[1].to_string();
+            let start = i;
+            let (end, body) = collect_body(&lines, start);
+            i = end;
+            if let Some(sem_name) = detect_semantic_helper_name(&body) {
+                eprintln!("semantic rename existing helper_{} -> {}", num, sem_name);
+                helper_map.insert(num.clone(), sem_name);
+            }
+        }
+        i += 1;
+    }
+    for (num, name) in &helper_map {
+        let re_all = Regex::new(&format!(r"\bhelper_{}\b", num)).unwrap();
+        out = re_all.replace_all(&out, name.as_str()).to_string();
+    }
+
+    // third pass: rename wrappers
+    let re_wrap = Regex::new(r"fn wrap_helper_(\d+)\s*\(([^)]*)\)\s*\{([^}]*)\}").unwrap();
+    let mut wrap_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for cap in re_wrap.captures_iter(&out) {
+        let num = cap[1].to_string();
+        let body = cap[3].trim();
+        // look for a single call to a semantic helper
+        let re_call = Regex::new(r"Self::([a-zA-Z_][a-zA-Z0-9_]*)").unwrap();
+        let mut targets: Vec<String> = re_call.captures_iter(body).map(|c| c[1].to_string()).collect();
+        targets.retain(|n| !n.starts_with("wrap_helper_") && !n.starts_with("helper_") );
+        targets.dedup();
+        if targets.len() == 1 {
+            let new_name = format!("wrap_{}", targets[0]);
+            wrap_map.insert(num.clone(), new_name);
+        }
+    }
+    for (num, name) in &wrap_map {
+        let re_all = Regex::new(&format!(r"\bwrap_helper_{}\b", num)).unwrap();
+        out = re_all.replace_all(&out, name.as_str()).to_string();
+    }
+    out
+}
+
+/// Look at function body and return a semantic name if recognizable.
+fn detect_semantic_helper_name(body: &str) -> Option<String> {
+                // Symbol parsing (auth contract)
+                if body.contains("mload8!(c.wrapping_add(1048583)") && body.contains("Symbol::new(&env, \"Counter\")") {
+                    return Some("symbol_parse_counter".to_string());
+                }
+                // Unreachable stub (auth contract)
+                if body.trim() == "unreachable!();" {
+                    return Some("unreachable_stub".to_string());
+                }
+            // Error handling helpers
+            if body.contains("unreachable!()") && body.contains("if ") {
+                return Some("assert_or_unreachable".to_string());
+            }
+            if body.contains("return Err(") || body.contains("Result<") {
+                return Some("error_result".to_string());
+            }
+            // Math helpers
+            if body.contains("wrapping_add") && body.contains("wrapping_sub") {
+                return Some("math_wrapping_ops".to_string());
+            }
+            if body.contains("wrapping_shl") || body.contains("wrapping_shr") {
+                return Some("bitwise_shift_ops".to_string());
+            }
+            // Storage helpers
+            if body.contains("storage().get_contract_data") {
+                return Some("storage_get_val".to_string());
+            }
+            if body.contains("storage().set_contract_data") {
+                return Some("storage_set_val".to_string());
+            }
+            if body.contains("storage().del_contract_data") {
+                return Some("storage_remove_val".to_string());
+            }
+        // privacy pools helpers
+        if body.contains("Val::from_i128") && body.contains("wrapping_add(36028797018963968)") {
+            return Some("pack_i128_or_bounds_check".to_string());
+        }
+        if body.contains("persistent().has(&val_from_i64(") {
+            return Some("persistent_exists".to_string());
+        }
+    // Quick regex/text-based heuristics (fast wins)
+    if body.contains("Bytes::from_val") && body.contains(".len() as i64") {
+        return Some("bytes_len".to_string());
+    }
+    if body.contains("copy_bytes_to_linear_memory") || body.contains("copy_string_to_linear_memory") {
+        return Some("copy_bytes_to_linear_memory".to_string());
+    }
+    // symbol parsing helpers often contain loops over mload8!, checks for 95 ('_') and
+    // arithmetic with 48/65/97 to map ascii characters to symbol values.
+    if body.contains("mload8!") && body.contains("a == 95") && body.contains("wrapping_sub(48") {
+        return Some("symbol_parse".to_string());
+    }
+    // groth16 verifier helpers
+    if body.contains("if arg1 != 0") && body.contains("unreachable!") {
+        return Some("assert_unreachable_or_error".to_string());
+    }
+    if body.contains("mload8!") && body.contains("loop") && body.contains("if b != c") {
+        return Some("compare_bytes".to_string());
+    }
+    if body.contains("mstore8!") && body.contains("wrapping_add") && body.contains("loop") {
+        return Some("fill_bytes".to_string());
+    }
+    // alloc contract helpers
+    if body.contains("arg1 & 3") && body.contains("wrapping_sub") && body.contains("wrapping_add(4)") {
+        return Some("align_or_bounds_check".to_string());
+    }
+    if body.trim() == "Self::unreachable_stub(env);" {
+        return Some("unreachable_stub".to_string());
+    }
+    let re_assert = Regex::new(r"if\s+arg\d+ != arg\d+\s+\{\s*unreachable!\(\)\;\s*\}").unwrap();
+    if re_assert.is_match(body) {
+        return Some("assert_eq".to_string());
+    }
+
+    // Memory access helpers
+    if body.contains("mload32!") {
+        return Some("mload32".to_string());
+    }
+    if body.contains("mload64!") {
+        return Some("mload64".to_string());
+    }
+    // common utility pattern seen in several random contracts
+    if body.contains("alloc_range_fill") {
+        return Some("alloc_range_fill".to_string());
+    }
+    if body.contains("memcmp_sign32") {
+        return Some("memcmp_sign32".to_string());
+    }
+
+    // Bitpacking / unpack helpers (u32 pair in i64/i128)
+    if body.contains("wrapping_shl(32") || body.contains("wrapping_shr(32") {
+        return Some("pack_u32_pair".to_string());
+    }
+
+    // Crypto / proof systems
+    if body.contains("groth16") || body.contains("verify_proof") || body.contains("pairing") {
+        return Some("groth16_verify".to_string());
+    }
+    if body.to_lowercase().contains("ed25519") || body.contains("ed25519_verify") {
+        return Some("ed25519_verify".to_string());
+    }
+    if body.to_lowercase().contains("bls") || body.contains("bn254") {
+        return Some("bls_verify".to_string());
+    }
+
+    // Hashing / keccak / sha variants
+    if body.contains("keccak") || body.contains("keccak256") {
+        return Some("keccak_hash".to_string());
+    }
+    if body.contains("sha256") || body.contains("sha2") {
+        return Some("sha256_hash".to_string());
+    }
+
+    // Serialization helpers
+    if body.contains("serialize") || body.contains("to_bytes") || body.contains("to_vec") {
+        return Some("serialize".to_string());
+    }
+    if body.contains("deserialize") || body.contains("from_bytes") || body.contains("from_vec") {
+        return Some("deserialize".to_string());
+    }
+
+    // Common SDK helpers
+    if body.contains("address_from_i64") || body.contains("address_from") {
+        return Some("address_from_i64".to_string());
+    }
+    if body.contains("vec_push") || body.contains("vec.push") || body.contains("Vec::push") {
+        return Some("vec_push_val".to_string());
+    }
+    if body.contains("vec_new") || body.contains("Vec::new") {
+        return Some("vec_new_val".to_string());
+    }
+    if body.contains("require_len_match") || body.contains("len() as i64") {
+        return Some("require_len_match".to_string());
+    }
+    if body.contains("mint") && body.contains("balance") {
+        return Some("token_mint".to_string());
+    }
+    if body.contains("burn") && body.contains("balance") {
+        return Some("token_burn".to_string());
+    }
+    if body.contains("transfer") && body.contains("balance") {
+        return Some("token_transfer".to_string());
+    }
+
+    // event emission
+    if body.contains("event::emit") || body.contains("emit(") {
+        return Some("event_emit".to_string());
+    }
+
+    // for some heuristics we only care about the *inner* function body (between the
+    // first `{` and matching `}`) because the full text includes the signature and
+    // closing brace which can confuse simple checks.
+    let inner = if let Some(start) = body.find('{') {
+        if let Some(end) = body.rfind('}') {
+            &body[start + 1..end]
+        } else {
+            &body[start + 1..]
+        }
+    } else {
+        body
+    };
+
+    // simple map constructor helper
+    if inner.contains("Map::<Val") && inner.contains("into_val") {
+        return Some("map_new_val".to_string());
+    }
+
+    // constant getters: simple functions that just return a constant identifier
+    {
+        let trimmed = inner.trim();
+        // literal constant (no semicolon)
+        if !trimmed.is_empty()
+            && trimmed.chars().all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit())
+        {
+            return Some(trimmed.to_string());
+        }
+        if trimmed.ends_with(";") {
+            let inner2 = trimmed.trim_end_matches(";").trim();
+            if inner2.chars().all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit()) {
+                return Some(inner2.to_string());
+            }
+        }
+        if let Some(rest) = trimmed.strip_prefix("return ") {
+            let rest = rest.trim_end_matches(";").trim();
+            if rest.chars().all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit()) {
+                return Some(rest.to_string());
+            }
+        }
+    }
+
+    // wrapper helpers: if the body only invokes another helper/known function
+    {
+        let re = Regex::new(r"Self::([a-zA-Z_][a-zA-Z0-9_]*)").unwrap();
+        let mut names: Vec<String> = re
+            .captures_iter(inner)
+            .map(|c| c[1].to_string())
+            .collect();
+        // filter out the ubiquitous unreachable stubs
+        names.retain(|n| n != "call_unreachable" && n != "unreachable_stub");
+        names.dedup();
+        if names.len() == 1 {
+            return Some(format!("wrap_{}", names[0]));
+        }
+    }
+
+    // After heuristics, attempt to match against fingerprint database
+    if let Some(name) = try_match_fingerprint(body) {
+        return Some(name);
+    }
+
+    // Try classification via FunctionClassifier for structural detection
+    // Build a minimal FunctionBlock from the body and classify it.
+    use crate::engine::function::FunctionBlock;
+    use crate::engine::patterns::FunctionClassifier;
+    let lines: Vec<String> = body.lines().map(|l| l.to_string()).collect();
+    let block = FunctionBlock {
+        header: String::new(),
+        body: lines,
+        footer: String::new(),
+        indent: String::new(),
+        name: String::new(),
+    };
+    let cls = FunctionClassifier::new();
+    let cat = cls.classify(&block);
+    match cat {
+        crate::engine::patterns::FunctionCategory::TokenTransfer => {
+            return Some("token_transfer".to_string())
+        }
+        crate::engine::patterns::FunctionCategory::TokenMint => {
+            return Some("token_mint".to_string())
+        }
+        crate::engine::patterns::FunctionCategory::TokenBurn => {
+            return Some("token_burn".to_string())
+        }
+        crate::engine::patterns::FunctionCategory::Authorization => {
+            return Some("require_auth_check".to_string())
+        }
+        crate::engine::patterns::FunctionCategory::ContractInvoke => {
+            return Some("invoke_contract".to_string())
+        }
+        crate::engine::patterns::FunctionCategory::DataAccess => {
+            return Some("storage_access".to_string())
+        }
+        crate::engine::patterns::FunctionCategory::Computation => {
+            return Some("computation".to_string())
+        }
+        _ => {}
+    }
+
+    None
+}
+
+/// Strip trailing numeric suffixes from stack-offset temporaries like
+/// `a_i32_96_7` -> `a_i32_96`.
+fn strip_offset_numbers(output: String) -> String {
+    let re = Regex::new(r"(?P<base>\b[a-zA-Z_]\w*_i(?:32|64)_\d+)_\d+\b").unwrap();
+    re.replace_all(&output, "$base").to_string()
+}
+
+// Fingerprint DB helper
+use once_cell::sync::OnceCell;
+use std::collections::HashMap;
+
+static FP_DB: OnceCell<Option<HashMap<String, String>>> = OnceCell::new();
+
+/// Attempt to match function body to a known helper using the fingerprint DB.
+fn try_match_fingerprint(body: &str) -> Option<String> {
+    // load once
+    let db_opt = FP_DB.get_or_init(|| {
+        if let Ok(path) = std::env::var("SOROBAN_AUDITOR_FP_DB") {
+            match crate::helper_fingerprints::load_db(std::path::Path::new(&path)) {
+                Ok(m) => Some(m),
+                Err(e) => {
+                    eprintln!("warning: failed to load fingerprint DB: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    });
+    if let Some(db) = db_opt {
+        let lines: Vec<String> = body.lines().map(|l| l.to_string()).collect();
+        if let Some(name) = crate::helper_fingerprints::match_body(db, &lines) {
+            return Some(name.clone());
+        }
+    }
+    None
+}
+
+/// Fix borrowing of `env` parameter when passed to SDK methods.
+/// Many Soroban SDK methods require &Env (reference), not Env (owned).
+/// This function converts Symbol::new(env, ...) to Symbol::new(&env, ...)
+/// and similar patterns.
+fn fix_env_borrowing(output: String) -> String {
+    let sdk_methods = vec![
+        "Symbol::new",
+        "BytesN::new",
+        "Bytes::new",
+        "Vec::new",
+        "Vec::from_array",
+        "Map::new",
+        "Val::from_val",
+        "String::from_utf8",
+        "TryFromVal::try_from_val",
+        "IntoVal::into_val",
+    ];
+    
+    let mut output = output.clone();
+    
+    // Fix patterns like: Method(env, ... -> Method(&env, ...
+    for method in &sdk_methods {
+        // Match pattern: Method(env, where env is not already borrowed
+        let pattern = format!(r#"{}(env,(?! *&)"#, regex::escape(method));
+        if let Ok(re) = Regex::new(&pattern) {
+            output = re.replace_all(&output, format!("{}(&env,", method)).to_string();
+        }
+        
+        // Also fix vec![&env, ... pattern
+        let vec_pattern = r"vec!\[&env, (Symbol::new)\(env,";
+        if let Ok(re) = Regex::new(vec_pattern) {
+            output = re.replace_all(&output, "vec![&env, Symbol::new(&env,").to_string();
+        }
+    }
+    
+    // Fix patterns in function calls where env is first parameter without &
+    let pattern = r"(?:Symbol|Bytes|BytesN)::new\(\s*env\s*,";
+    if let Ok(re) = Regex::new(pattern) {
+        output = re.replace_all(&output, |caps: &regex::Captures| {
+            caps.get(0).unwrap().as_str().replace("env,", "&env,")
+        }).to_string();
+    }
+    
+    output
+}
+
 
 fn add_blank_line_before_functions(output: String) -> String {
     let mut out: Vec<String> = Vec::new();

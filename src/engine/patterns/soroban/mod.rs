@@ -47,6 +47,10 @@ mod status_result_guard_text;
 mod unwrap_try_from_val_if;
 mod unwrap_type_tag_ok_if;
 mod unused_let_side_effect_preserve;
+mod storage_key_recovery;
+mod token_transfer_recovery;
+mod auth_guard_consolidation;
+mod line_length_formatter;
 
 pub use consolidate_comments::ConsolidateCommentsPattern;
 pub use conversion_elimination::ConversionEliminationPattern;
@@ -97,3 +101,7 @@ pub use vec_builder_assignment::VecBuilderAssignmentPattern;
 pub use unwrap_try_from_val_if::UnwrapTryFromValIfPattern;
 pub use unwrap_type_tag_ok_if::UnwrapTypeTagOkIfPattern;
 pub use unused_let_side_effect_preserve::UnusedLetSideEffectPreservePattern;
+pub use storage_key_recovery::StorageKeyRecoveryPattern;
+pub use token_transfer_recovery::TokenTransferRecoveryPattern;
+pub use auth_guard_consolidation::AuthGuardConsolidationPattern;
+pub use line_length_formatter::LineFormatterPattern;

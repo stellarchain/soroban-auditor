@@ -724,8 +724,8 @@ impl RandomContract1 {
         arg0: i64,
         arg1: i64,
     ) -> i32 {
-        let a = match arg1 { 0 => { if env.storage().persistent().has(&val_from_i64(arg0)) { 1 } else { 0 } }, 1 => { if env.storage().temporary().has(&val_from_i64(arg0)) { 1 } else { 0 } }, _ => { if env.storage().instance().has(&val_from_i64(arg0)) { 1 } else { 0 } } }
-        (a == 1 /* True */) as i32
+        let a = cematch arg1 { 0 => { if env.storage().persistent().has(&val_from_i64(arg0)) { 1 } else { 0 } }, 1 => { if env.storage().temporary().has(&val_from_i64(arg0)) { 1 } else { 0 } }, _ => { if env.storage().instance().has(&val_from_i64(arg0)) { 1 } else { 0 } } }
+        (a == 1 /* True */) as i32?
     }
 
     fn map_unpack_to_val(

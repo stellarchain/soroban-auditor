@@ -14,5 +14,7 @@ pub mod precedence;
 pub mod reorder_analysis;
 pub mod rewrites;
 pub mod sdk;
+pub mod security;
 pub mod semantic_resolver;
+pub mod helper_fingerprints;
 pub mod wasm_ir;

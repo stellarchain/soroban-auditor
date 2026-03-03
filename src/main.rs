@@ -3,22 +3,29 @@ extern crate structopt;
 
 use structopt::StructOpt;
 
-mod app;
-mod code_builder;
-mod decompile;
-mod engine;
-mod expr_builder;
-mod fingerprint;
-mod fingerprint_registry;
-mod format;
-mod forwarder;
-mod helper_semantics;
-mod precedence;
-mod reorder_analysis;
-mod rewrites;
-mod sdk;
-mod semantic_resolver;
-mod wasm_ir;
+// instead of redeclaring all of the modules that already live in the
+// library crate, simply import them from `soroban_auditor`.  this keeps the
+// binary crate small and ensures we don't duplicate code (and avoids the
+// "unresolved module" errors when the library exposes helpers such as
+// `helper_fingerprints`).
+use soroban_auditor::{
+    app,
+    code_builder,
+    decompile,
+    engine,
+    expr_builder,
+    fingerprint,
+    fingerprint_registry,
+    format,
+    forwarder,
+    helper_semantics,
+    precedence,
+    reorder_analysis,
+    rewrites,
+    sdk,
+    semantic_resolver,
+    wasm_ir,
+};
 
 fn main() {
     let opt = app::Opt::from_args();

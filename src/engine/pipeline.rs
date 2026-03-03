@@ -27,6 +27,8 @@ use crate::engine::patterns::{
     TypeTagGuardCleanupPattern, TypeTagGuardStripPattern, UnwrapTryFromValIfPattern, UnwrapTypeTagOkIfPattern, VmScaffoldCleanupPattern, WasmTypeGuardPrunePattern,
     VecBuilderAssignmentPattern,
     UnreachableCleanupPattern,
+    StorageKeyRecoveryPattern, TokenTransferRecoveryPattern, AuthGuardConsolidationPattern,
+    LineFormatterPattern,
 };
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
@@ -212,6 +214,12 @@ fn register_soroban_phase(patterns: &mut Vec<Box<dyn Pattern>>) {
     patterns.push(Box::new(MathOperationsPattern::new()));
     patterns.push(Box::new(LinearMemoryVecBuildPattern::new()));
     patterns.push(Box::new(ConstantMatchCleanupPattern::new()));
+    
+    // NEW: High-level Soroban patterns for 1:1 extraction
+    patterns.push(Box::new(StorageKeyRecoveryPattern::new()));
+    patterns.push(Box::new(TokenTransferRecoveryPattern::new()));
+    patterns.push(Box::new(AuthGuardConsolidationPattern::new()));
+    patterns.push(Box::new(LineFormatterPattern::new())); // Critical for long match statements
     // DISABLED: Old VariableNamingPattern causes panics on some contracts
     // engine.register(VariableNamingPattern::new());
 }

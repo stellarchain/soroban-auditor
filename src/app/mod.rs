@@ -50,6 +50,11 @@ fn postprocess_output(output: String, contract_name: &str) -> String {
     postprocess::run_all(output, contract_name)
 }
 
+/// public wrapper for external tools / tests that need the full postprocessing
+pub fn postprocess_str(output: String, contract_name: &str) -> String {
+    postprocess::run_all(output, contract_name)
+}
+
 fn apply_engine_output(output: String) -> String {
     if std::env::var("SOROBAN_AUDITOR_SKIP_ENGINE").is_ok() {
         output
