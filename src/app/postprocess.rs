@@ -64,6 +64,10 @@ pub fn run_all(output: String, contract_name: &str) -> String {
     let output = fix_let_match_semicolons(output);
     let output = parenthesize_cast_comparisons(output);
     let output = rename_func_numbers(output);
+    let output = rewrite_symbol_key_helpers(output);
+    let output = cleanup_unreachable_wrapper_calls(output);
+    let output = postprocess_remove_unused_methods(output, contract_name);
+    let output = remove_unused_unreachable_stubs(output);
     let output = strip_offset_numbers(output);
     let output = fix_env_borrowing(output);
     // Keep the rest of postprocess as opt-in cosmetic cleanup.
@@ -305,45 +309,49 @@ fn rename_func_numbers(output: String) -> String {
 
 /// Look at function body and return a semantic name if recognizable.
 fn detect_semantic_helper_name(body: &str) -> Option<String> {
-                // Symbol parsing (auth contract)
-                if body.contains("mload8!(c.wrapping_add(1048583)") && body.contains("Symbol::new(&env, \"Counter\")") {
-                    return Some("symbol_parse_counter".to_string());
-                }
-                // Unreachable stub (auth contract)
-                if body.trim() == "unreachable!();" {
-                    return Some("unreachable_stub".to_string());
-                }
-            // Error handling helpers
-            if body.contains("unreachable!()") && body.contains("if ") {
-                return Some("assert_or_unreachable".to_string());
-            }
-            if body.contains("return Err(") || body.contains("Result<") {
-                return Some("error_result".to_string());
-            }
-            // Math helpers
-            if body.contains("wrapping_add") && body.contains("wrapping_sub") {
-                return Some("math_wrapping_ops".to_string());
-            }
-            if body.contains("wrapping_shl") || body.contains("wrapping_shr") {
-                return Some("bitwise_shift_ops".to_string());
-            }
-            // Storage helpers
-            if body.contains("storage().get_contract_data") {
-                return Some("storage_get_val".to_string());
-            }
-            if body.contains("storage().set_contract_data") {
-                return Some("storage_set_val".to_string());
-            }
-            if body.contains("storage().del_contract_data") {
-                return Some("storage_remove_val".to_string());
-            }
-        // privacy pools helpers
-        if body.contains("Val::from_i128") && body.contains("wrapping_add(36028797018963968)") {
-            return Some("pack_i128_or_bounds_check".to_string());
+    if let Some(symbol_name) = extract_symbol_literal(body) {
+        let base = symbol_to_identifier(&symbol_name);
+        if body.contains("vec![&env") && body.contains("into_val(env)") {
+            return Some(format!("{}_key", base));
         }
-        if body.contains("persistent().has(&val_from_i64(") {
-            return Some("persistent_exists".to_string());
-        }
+        return Some(format!("symbol_{}", base));
+    }
+
+    if body.trim() == "unreachable!();" {
+        return Some("unreachable_stub".to_string());
+    }
+
+    // Error handling helpers
+    if body.contains("unreachable!()") && body.contains("if ") {
+        return Some("assert_or_unreachable".to_string());
+    }
+    if body.contains("return Err(") || body.contains("Result<") {
+        return Some("error_result".to_string());
+    }
+    // Math helpers
+    if body.contains("wrapping_add") && body.contains("wrapping_sub") {
+        return Some("math_wrapping_ops".to_string());
+    }
+    if body.contains("wrapping_shl") || body.contains("wrapping_shr") {
+        return Some("bitwise_shift_ops".to_string());
+    }
+    // Storage helpers
+    if body.contains("storage().get_contract_data") {
+        return Some("storage_get_val".to_string());
+    }
+    if body.contains("storage().set_contract_data") {
+        return Some("storage_set_val".to_string());
+    }
+    if body.contains("storage().del_contract_data") {
+        return Some("storage_remove_val".to_string());
+    }
+    // privacy pools helpers
+    if body.contains("Val::from_i128") && body.contains("wrapping_add(36028797018963968)") {
+        return Some("pack_i128_or_bounds_check".to_string());
+    }
+    if body.contains("persistent().has(&val_from_i64(") {
+        return Some("persistent_exists".to_string());
+    }
     // Quick regex/text-based heuristics (fast wins)
     if body.contains("Bytes::from_val") && body.contains(".len() as i64") {
         return Some("bytes_len".to_string());
@@ -554,6 +562,247 @@ fn detect_semantic_helper_name(body: &str) -> Option<String> {
     }
 
     None
+}
+
+fn extract_symbol_literal(body: &str) -> Option<String> {
+    let re = Regex::new(r#"Symbol::new\(&?env,\s*"([^"]+)"\)"#).unwrap();
+    re.captures(body).map(|caps| caps[1].to_string())
+}
+
+fn symbol_to_identifier(symbol: &str) -> String {
+    let mut out = String::new();
+    let mut last_was_sep = false;
+    for (idx, ch) in symbol.chars().enumerate() {
+        if ch.is_ascii_alphanumeric() {
+            if ch.is_ascii_uppercase() {
+                if idx > 0 && !last_was_sep && !out.is_empty() {
+                    out.push('_');
+                }
+                out.push(ch.to_ascii_lowercase());
+            } else {
+                out.push(ch.to_ascii_lowercase());
+            }
+            last_was_sep = false;
+        } else if !last_was_sep && !out.is_empty() {
+            out.push('_');
+            last_was_sep = true;
+        }
+    }
+    let trimmed = out.trim_matches('_');
+    if trimmed.is_empty() {
+        "symbol".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+#[derive(Clone, Debug)]
+struct KeyVariant {
+    enum_name: String,
+    variant_name: String,
+    field_types: Vec<String>,
+}
+
+fn rewrite_symbol_key_helpers(output: String) -> String {
+    let mut lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
+    let variants = collect_key_variants(&lines);
+    if variants.is_empty() {
+        return output;
+    }
+
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    let mut i = 0usize;
+    while i < lines.len() {
+        let trimmed = lines[i].trim_start();
+        if !trimmed.starts_with("fn ") {
+            out.push(lines[i].clone());
+            i += 1;
+            continue;
+        }
+        let Some(end) = find_block_end(&lines, i) else {
+            out.push(lines[i].clone());
+            i += 1;
+            continue;
+        };
+        let block_text = lines[i..=end].join("\n");
+        let Some(symbol_name) = extract_symbol_literal(&block_text) else {
+            out.extend(lines[i..=end].iter().cloned());
+            i = end + 1;
+            continue;
+        };
+        let Some(variant) = variants.get(&symbol_to_identifier(&symbol_name)) else {
+            out.extend(lines[i..=end].iter().cloned());
+            i = end + 1;
+            continue;
+        };
+        if !block_text.contains("-> i64") {
+            out.extend(lines[i..=end].iter().cloned());
+            i = end + 1;
+            continue;
+        }
+        let header_end = (i..=end).find(|idx| lines[*idx].contains('{')).unwrap_or(i);
+        let arg_names = extract_helper_arg_names(&lines[i..=header_end]);
+        if arg_names.len() != variant.field_types.len() {
+            out.extend(lines[i..=end].iter().cloned());
+            i = end + 1;
+            continue;
+        }
+        let Some(key_expr) = build_key_variant_expr(variant, &arg_names) else {
+            out.extend(lines[i..=end].iter().cloned());
+            i = end + 1;
+            continue;
+        };
+        let body_indent = format!("{}    ", leading_ws(&lines[i]));
+        out.extend(lines[i..=header_end].iter().cloned());
+        out.push(format!("{}let key = {};", body_indent, key_expr));
+        out.push(format!("{}val_to_i64(key.into_val(env))", body_indent));
+        out.push(lines[end].clone());
+        i = end + 1;
+    }
+
+    out.join("\n")
+}
+
+fn collect_key_variants(lines: &[String]) -> std::collections::HashMap<String, KeyVariant> {
+    let enum_re = Regex::new(r"pub enum (\w+) \{(.*)\}").unwrap();
+    let mut variants = std::collections::HashMap::new();
+    for line in lines {
+        let Some(caps) = enum_re.captures(line) else {
+            continue;
+        };
+        let enum_name = caps[1].to_string();
+        if !enum_name.ends_with("Key") {
+            continue;
+        }
+        for raw_variant in caps[2].split(',') {
+            let variant = raw_variant.trim();
+            if variant.is_empty() {
+                continue;
+            }
+            if let Some((name, rest)) = variant.split_once('(') {
+                let fields = rest
+                    .trim_end_matches(')')
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>();
+                variants.insert(
+                    symbol_to_identifier(name),
+                    KeyVariant {
+                        enum_name: enum_name.clone(),
+                        variant_name: name.trim().to_string(),
+                        field_types: fields,
+                    },
+                );
+            } else {
+                variants.insert(
+                    symbol_to_identifier(variant),
+                    KeyVariant {
+                        enum_name: enum_name.clone(),
+                        variant_name: variant.to_string(),
+                        field_types: Vec::new(),
+                    },
+                );
+            }
+        }
+    }
+    variants
+}
+
+fn extract_helper_arg_names(lines: &[String]) -> Vec<String> {
+    let arg_re = Regex::new(r"\b(arg\d+)\s*:").unwrap();
+    lines.iter()
+        .flat_map(|line| arg_re.captures_iter(line).map(|caps| caps[1].to_string()))
+        .collect()
+}
+
+fn build_key_variant_expr(variant: &KeyVariant, arg_names: &[String]) -> Option<String> {
+    let converted = variant
+        .field_types
+        .iter()
+        .zip(arg_names.iter())
+        .map(|(field_ty, arg_name)| convert_key_field_expr(field_ty, arg_name))
+        .collect::<Option<Vec<_>>>()?;
+
+    if converted.is_empty() {
+        Some(format!("{}::{}", variant.enum_name, variant.variant_name))
+    } else {
+        Some(format!(
+            "{}::{}({})",
+            variant.enum_name,
+            variant.variant_name,
+            converted.join(", ")
+        ))
+    }
+}
+
+fn convert_key_field_expr(field_ty: &str, arg_name: &str) -> Option<String> {
+    match field_ty.trim() {
+        "Address" => Some(format!("address_from_i64(env, {})", arg_name)),
+        "u32" => Some(format!(
+            "(({} as u64).wrapping_shr(32 as u32) as i64 as i32 as u32)",
+            arg_name
+        )),
+        "i32" => Some(format!(
+            "(({} as u64).wrapping_shr(32 as u32) as i64 as i32)",
+            arg_name
+        )),
+        "i64" => Some(arg_name.to_string()),
+        "u64" => Some(format!("{} as u64", arg_name)),
+        _ => None,
+    }
+}
+
+fn cleanup_unreachable_wrapper_calls(output: String) -> String {
+    let lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    let mut i = 0usize;
+    while i < lines.len() {
+        if i + 1 < lines.len()
+            && lines[i].trim() == "Self::call_unreachable(env);"
+            && lines[i + 1].trim() == "unreachable!();"
+        {
+            out.push(lines[i + 1].clone());
+            i += 2;
+            continue;
+        }
+        out.push(lines[i].clone());
+        i += 1;
+    }
+    out.join("\n")
+}
+
+fn remove_unused_unreachable_stubs(output: String) -> String {
+    let referenced = collect_self_calls(&output);
+    let lines: Vec<String> = output.lines().map(|l| l.to_string()).collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    let mut i = 0usize;
+    while i < lines.len() {
+        let trimmed = lines[i].trim_start();
+        if !trimmed.starts_with("fn ") {
+            out.push(lines[i].clone());
+            i += 1;
+            continue;
+        }
+        let name = trimmed["fn ".len()..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect::<String>();
+        let Some(end) = find_block_end(&lines, i) else {
+            out.push(lines[i].clone());
+            i += 1;
+            continue;
+        };
+        let body = lines[i..=end].join("\n");
+        let is_helper = name.starts_with("helper_") || name == "unreachable_stub";
+        if is_helper && !referenced.contains(&name) && body.contains("unreachable!();") {
+            i = end + 1;
+            continue;
+        }
+        out.extend(lines[i..=end].iter().cloned());
+        i = end + 1;
+    }
+    out.join("\n")
 }
 
 /// Strip trailing numeric suffixes from stack-offset temporaries like
@@ -2797,7 +3046,9 @@ fn postprocess_remove_unused_top_level_helpers(output: String) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{fix_match_break_without_loop, prune_unused_soroban_imports};
+    use super::{
+        fix_match_break_without_loop, prune_unused_soroban_imports, rewrite_symbol_key_helpers,
+    };
 
     #[test]
     fn wraps_match_break_when_outside_loop() {
@@ -2851,5 +3102,31 @@ mod tests {
         assert!(output.contains("use soroban_sdk::{contract, contractimpl, Env, Vec, vec, Symbol};"));
         assert!(!output.contains("Val,"));
         assert!(!output.contains("Address,"));
+    }
+
+    #[test]
+    fn rewrites_symbol_key_helpers_to_enum_variants() {
+        let input = [
+            "#![no_std]",
+            "use soroban_sdk::{Address, Env, IntoVal, Val, FromVal, Symbol, contracttype};",
+            "#[contracttype]",
+            "pub enum DataKey { Counter(Address), }",
+            "fn address_from_i64(env: &Env, v: i64) -> Address {",
+            "    Address::from_val(env, &val_from_i64(v))",
+            "}",
+            "fn counter_key(",
+            "    env: &Env,",
+            "    arg0: i64,",
+            ") -> i64 {",
+            "    let h = val_to_i64(Symbol::new(&env, \"Counter\"));",
+            "    let i = val_to_i64(vec![&env, val_from_i64(h), val_from_i64(arg0)].into_val(env));",
+            "    i",
+            "}",
+        ]
+        .join("\n");
+
+        let output = rewrite_symbol_key_helpers(input);
+        assert!(output.contains("let key = DataKey::Counter(address_from_i64(env, arg0));"));
+        assert!(output.contains("val_to_i64(key.into_val(env))"));
     }
 }

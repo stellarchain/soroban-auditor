@@ -9,7 +9,7 @@ fn storage_match_expr(
 ) -> String {
     format!(
         "match {} {{ 0 => {{ {} }}, 1 => {{ {} }}, _ => {{ {} }} }}",
-        storage_type, persistent_expr, temporary_expr, instance_expr
+        storage_type, temporary_expr, persistent_expr, instance_expr
     )
 }
 
@@ -1263,5 +1263,19 @@ pub fn map_imported_call(
             // Fallback: unified semantic resolver (canonicalization + SDK mapping).
             resolver().resolve_sdk_call(canonical_name, args)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::storage_match_expr;
+
+    #[test]
+    fn storage_match_expr_uses_soroban_storage_type_order() {
+        let expr = storage_match_expr("kind", "persistent", "temporary", "instance");
+        assert_eq!(
+            expr,
+            "match kind { 0 => { temporary }, 1 => { persistent }, _ => { instance } }"
+        );
     }
 }

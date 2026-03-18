@@ -88,6 +88,6 @@ mod tests {
             "event::emit(TransferEvent { from, to, amount });".to_string(),
         ];
 
-        assert!(Self::is_transfer_shape(&lines));
+        assert!(TokenTransferRecoveryPattern::is_transfer_shape(&lines));
     }
 }

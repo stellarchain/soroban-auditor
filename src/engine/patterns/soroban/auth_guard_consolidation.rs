@@ -15,7 +15,6 @@
 
 use crate::engine::function::FunctionBlock;
 use crate::engine::pattern::Pattern;
-use regex::Regex;
 
 pub struct AuthGuardConsolidationPattern;
 
@@ -96,7 +95,7 @@ mod tests {
             "}".to_string(),
         ];
 
-        let idx = Self::detect_auth_guard(&lines);
+        let idx = AuthGuardConsolidationPattern::detect_auth_guard(&lines);
         assert!(idx.is_some());
     }
 
@@ -107,7 +106,7 @@ mod tests {
             "if env.invoke(from_address, require_auth) != 0 {".to_string(),
         ];
 
-        let subject = Self::extract_auth_subject(&lines, 1);
+        let subject = AuthGuardConsolidationPattern::extract_auth_subject(&lines, 1);
         // May or may not extract depending on pattern - just verify it doesn't crash
         let _ = subject;
     }

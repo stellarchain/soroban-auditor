@@ -9,7 +9,7 @@
 
 use crate::engine::function::FunctionBlock;
 use crate::engine::pattern::Pattern;
-use std::collections::HashSet;
+use regex::Regex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FunctionCategory {
@@ -63,7 +63,7 @@ impl FunctionClassifier {
 
     /// Classify a function based on its code structure
     pub fn classify(&self, block: &FunctionBlock) -> FunctionCategory {
-        let patterns = self.extract_patterns(&block.body);
+        let patterns = self.extract_patterns(block);
 
         // Classification logic (no name-based assumptions)
         match &patterns {
@@ -75,13 +75,6 @@ impl FunctionClassifier {
             // Initialization: mass storage writes, no reads, returns void
             p if p.storage_writes > 2 && p.storage_reads == 0 && p.return_value_type == ReturnType::Void => {
                 FunctionCategory::Initialization
-            }
-
-            // Storage access: pure get/set
-            p if (p.storage_reads > 0 || p.storage_writes > 0)
-                && !p.has_require_auth
-                && !p.has_invoke_contract => {
-                FunctionCategory::DataAccess
             }
 
             // Cross-contract call
@@ -109,14 +102,22 @@ impl FunctionClassifier {
                 FunctionCategory::TokenQuery
             }
 
+            // Storage access: pure get/set
+            p if (p.storage_reads > 0 || p.storage_writes > 0)
+                && !p.has_require_auth
+                && !p.has_invoke_contract => {
+                FunctionCategory::DataAccess
+            }
+
             // Default
             _ => FunctionCategory::Unknown,
         }
     }
 
     /// Extract SDK call patterns from function body
-    fn extract_patterns(&self, lines: &[String]) -> SDKCallPattern {
-        let body_text = lines.join("\n");
+    fn extract_patterns(&self, block: &FunctionBlock) -> SDKCallPattern {
+        let body_text = block.body.join("\n");
+        let signature_text = block.header.replace('\n', " ");
 
         let storage_reads = count_pattern(&body_text, r"\.get\(|\.get_opt\(|\.get_unchecked\(");
         let storage_writes = count_pattern(&body_text, r"\.set\(|\.set_and_return\(");
@@ -124,13 +125,13 @@ impl FunctionClassifier {
         let has_invoke_contract = body_text.contains("invoke_contract");
         let has_emit_event = body_text.contains("event::emit");
 
-        let return_type = if body_text.contains("-> Result<") {
+        let return_type = if signature_text.contains("-> Result<") {
             ReturnType::Result
-        } else if body_text.contains("-> Option<") {
+        } else if signature_text.contains("-> Option<") {
             ReturnType::Option
-        } else if body_text.contains("-> void") || body_text.ends_with("()") {
+        } else if !signature_text.contains("->") {
             ReturnType::Void
-        } else if lines.iter().any(|l| l.trim().starts_with("return")) {
+        } else if block.body.iter().any(|l| l.trim().starts_with("return")) || block.body.len() == 1 {
             ReturnType::SingleValue
         } else {
             ReturnType::Complex
@@ -151,13 +152,10 @@ pub struct FunctionClassifier {}
 
 /// Simple pattern counter (regex-like but minimal)
 fn count_pattern(text: &str, pattern: &str) -> u32 {
-    // Simplified: just count occurrences
-    let parts: Vec<&str> = pattern.split('|').collect();
-    let mut count = 0u32;
-    for part in parts {
-        count += text.matches(part).count() as u32;
-    }
-    count
+    Regex::new(pattern)
+        .expect("valid classifier regex")
+        .find_iter(text)
+        .count() as u32
 }
 
 /// Pattern to apply function classification during engine pass
@@ -196,6 +194,7 @@ mod tests {
                 "event::emit(TransferEvent { from, to, amount });".to_string(),
             ],
             footer: "}".to_string(),
+            indent: String::new(),
         };
 
         let category = classifier.classify(&block);
@@ -212,6 +211,7 @@ mod tests {
                 "self.storage.get(&key(&account)).unwrap_or(0)".to_string(),
             ],
             footer: "}".to_string(),
+            indent: String::new(),
         };
 
         let category = classifier.classify(&block);

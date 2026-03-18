@@ -6,3 +6,5 @@
 .codex
 .vimspector.json
 /playground
+.DS_Store
+.vscode
